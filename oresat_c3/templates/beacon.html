@@ -2,6 +2,7 @@
 
 {% block content %}
   <button onclick="sendBeacon()">Send Beacon</button>
+  <button onclick="sendCFDP()">Send Test CFDP</button>
   <script>
     async function sendBeacon() {
       writeValue("beacon","send_now", true);
