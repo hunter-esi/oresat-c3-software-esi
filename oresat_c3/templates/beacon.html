@@ -6,5 +6,9 @@
     async function sendBeacon() {
       writeValue("beacon","send_now", true);
     }
+
+	async function sendCFDP() {
+      writeValue("payload","send_now", true);
+    }
   </script>
 {% endblock %}

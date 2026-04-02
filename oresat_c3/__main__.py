@@ -26,6 +26,7 @@ from .services.edl import EdlService
 from .services.node_manager import NodeManagerService
 from .services.radios import RadiosService
 from .services.state import StateService
+from .services.osiris import OsirisService
 from .subsystems.rtc import set_system_time_to_rtc_time
 
 
@@ -133,12 +134,14 @@ def main():
     beacon_service = BeaconService(config.beacon_def, radios_service)
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
     edl_service = EdlService(app.node, radios_service, node_mgr_service, beacon_service)
+    osiris_service = OsirisService()
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
     app.add_service(beacon_service)
     app.add_service(edl_service)
     app.add_service(node_mgr_service)
+    app.add_service(osiris_service)
 
     for file_name in os.listdir(f"{path}/templates"):
         rest_api.add_template(f"{path}/templates/{file_name}")
