@@ -61,7 +61,6 @@ from ..subsystems.rtc import set_rtc_time, set_system_time_to_rtc_time
 from .beacon import BeaconService
 from .channel_router import ChannelRouterService
 from .node_manager import NodeManagerService
-from .radios import RadiosService
 
 
 class EdlService(Service):
@@ -70,14 +69,12 @@ class EdlService(Service):
     def __init__(
         self,
         node: MasterNode,
-        radios_service: RadiosService,
         node_mgr_service: NodeManagerService,
         beacon_service: BeaconService,
         channel_router_service: ChannelRouterService,
     ):
         super().__init__()
 
-        self._radios_service = radios_service
         self._node_mgr_service = node_mgr_service
         self._beacon_service = beacon_service
         self._cmd_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(

@@ -134,9 +134,7 @@ def main():
     beacon_service = BeaconService(config.beacon_def, radios_service)
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
     channel_router_service = ChannelRouterService(radios_service)
-    edl_service = EdlService(
-        app.node, radios_service, node_mgr_service, beacon_service, channel_router_service
-    )
+    edl_service = EdlService(app.node, node_mgr_service, beacon_service, channel_router_service)
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
