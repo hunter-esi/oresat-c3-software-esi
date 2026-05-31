@@ -51,16 +51,51 @@ class ChannelRouterService(Service):
             logger.exception(f"Failed to unpack frame: {e}")
 
     def request_uplink_route(self, vcid: EdlVcid) -> Queue[TransferFrame]:
+        """Request an uplink Virtual Channel route.
+
+        Parameters
+        ----------
+        vcid
+            The VCID used to identify the route.
+
+        Returns
+        -------
+        Queue[TransferFrame]
+            The queue from which received uplink frames for the VCID may be fetched.
+
+        Raises
+        ------
+        KeyError
+            A route for `vcid` has already been claimed.
+        """
         if vcid in self._uplink_routes:
-            return self._uplink_routes[vcid]
+            raise KeyError(f"Uplink route for VCID={vcid} already exists")
         else:
             q = Queue(ChannelRouterService.QUEUE_SIZE)
             self._uplink_routes[vcid] = q
             return q
 
     def request_downlink_route(self, vcid: EdlVcid) -> SimpleQueue[bytes]:
+        """Request a downlink Virtual Channel route.
+
+        Parameters
+        ----------
+        vcid
+            The VCID used to identify the route.
+
+        Returns
+        -------
+        SimpleQueue[bytes]
+            A queue to place packed frames for downlinking.
+
+        Raises
+        ------
+        KeyError
+            A route for `vcid` has already been claimed.
+        """
+
         if vcid in self._downlink_routes:
-            return self._downlink_routes[vcid]
+            raise KeyError(f"Downlink route for VCID={vcid} already exists")
         else:
             q = SimpleQueue()
             self._downlink_routes[vcid] = q
