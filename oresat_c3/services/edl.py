@@ -128,12 +128,7 @@ class EdlService(Service):
     def _frame_to_packet(self, frame: TransferFrame) -> Optional[EdlPacket]:
         try:
             packet = EdlPacket.unpack(frame, self._hmac_key, not self._flight_mode)
-        except EdlPacketError as e:
-            self._rejected_count += 1
-            self._rejected_count &= 0xFF_FF_FF_FF
-            logger.error(f"invalid EDL request packet: {e}")
-            return None  # no responses to invalid packets
-        except SdlsInvalidHmacError as e:
+        except (EdlPacketError, SdlsInvalidHmacError) as e:
             self._rejected_count += 1
             self._rejected_count &= 0xFF_FF_FF_FF
             logger.error(f"invalid EDL request packet: {e}")

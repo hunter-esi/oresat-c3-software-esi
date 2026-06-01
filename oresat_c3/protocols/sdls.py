@@ -161,7 +161,7 @@ def verify_sdls(frame: TransferFrame, hmac_key: bytes) -> int:
         hmac_actual = frame.tfdf.tfdz[-HMAC_LEN:]
         frame.tfdf.tfdz = frame.tfdf.tfdz[:-HMAC_LEN] # strip the hmac from the transfer frame.
 
-        if hmac_expected != hmac_actual:
+        if not hmac.compare_digest(hmac_expected, hmac_actual):
             raise SdlsInvalidHmacError(f"Frame with invalid HMAC received expected: {hmac_expected}, Actual: {hmac_actual}")
 
         sequence_number = int.from_bytes(sdls_header[:-SEQ_NUM_LEN], byteorder="little")
