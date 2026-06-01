@@ -1,4 +1,4 @@
-from queue import Empty, Full, Queue, SimpleQueue
+from queue import Empty, SimpleQueue
 
 from olaf import Service, logger
 from spacepackets.uslp import TransferFrame
@@ -15,12 +15,10 @@ class ChannelRouterService(Service):
     valid frames into the appropriate queue.
     """
 
-    QUEUE_SIZE = 256
-
     def __init__(self, radios_service: RadiosService):
         super().__init__()
         self._radios_service = radios_service
-        self._uplink_routes: dict[EdlVcid, Queue[TransferFrame]] = {}
+        self._uplink_routes: dict[EdlVcid, SimpleQueue[TransferFrame]] = {}
         self._downlink_routes: dict[EdlVcid, SimpleQueue[TransferFrame]] = {}
 
     def on_loop(self) -> None:
@@ -40,17 +38,14 @@ class ChannelRouterService(Service):
             frame = unpack_frame(message)
             vcid = frame.header.vcid
             if vcid in self._uplink_routes:
-                try:
-                    self._uplink_routes[vcid].put_nowait(frame)
-                except Full:
-                    logger.warning(f"{vcid} queue full: frame discarded")
+                self._uplink_routes[vcid].put_nowait(frame)
             else:
                 logger.error(f"No route for VCID {frame.header.vcid}")
 
         except Exception as e:
             logger.exception(f"Failed to unpack frame: {e}")
 
-    def request_uplink_route(self, vcid: EdlVcid) -> Queue[TransferFrame]:
+    def request_uplink_route(self, vcid: EdlVcid) -> SimpleQueue[TransferFrame]:
         """Request an uplink Virtual Channel route.
 
         Parameters
@@ -60,7 +55,7 @@ class ChannelRouterService(Service):
 
         Returns
         -------
-        Queue[TransferFrame]
+        SimpleQueue[TransferFrame]
             The queue from which received uplink frames for the VCID may be fetched.
 
         Raises
@@ -71,7 +66,7 @@ class ChannelRouterService(Service):
         if vcid in self._uplink_routes:
             raise KeyError(f"Uplink route for VCID={vcid} already exists")
         else:
-            q = Queue(ChannelRouterService.QUEUE_SIZE)
+            q = SimpleQueue()
             self._uplink_routes[vcid] = q
             return q
 
