@@ -74,7 +74,6 @@ def get_hw_id(mock: bool) -> int:
 def watchdog():
     """Pet the watchdog app (which pets the watchdog circuit)."""
 
-    performance = True
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     loop = 0
 
@@ -84,6 +83,7 @@ def watchdog():
 
         failed = 0
         flight_mode = app.od["flight_mode"].value
+        performance = app.od["performance"].value
 
         for service in app._services:  # pylint: disable=W0212
             failed += int(service.status == ServiceState.FAILED)
