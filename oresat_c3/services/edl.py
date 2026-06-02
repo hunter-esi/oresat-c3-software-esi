@@ -364,7 +364,7 @@ class EdlService(Service):
             except canopen.sdo.exceptions.SdoAbortedError as e:
                 logger.error(e)
                 ecode = e.code
-            ret = (ecode, len(data), data)
+            ret = (node_id, index, subindex, ecode, len(data), data)
 
         if ret is not None and not isinstance(ret, tuple):
             ret = (ret,)  # make ret a tuple
