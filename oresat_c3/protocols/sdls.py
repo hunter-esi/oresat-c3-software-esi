@@ -52,8 +52,6 @@ class SdlsOresat(SdlsEmpty):
         header_mask = bytearray(b"\x00\x00\x07\xfe\x00\x00\x00")
         header_mask += bytearray(bytes(frame.header.vcf_count_len))
 
-        print(header_mask.hex())
-
         for i in range(len(header_mask)):
             authenticated_data[i] = authenticated_data[i] & header_mask[i]
 
