@@ -31,7 +31,7 @@ class SdlsEmpty:
     def apply(self, frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
         return
 
-    def verify(self, TransferFrame, hmac_key: bytes) -> int:
+    def verify(self, frame: TransferFrame, hmac_key: bytes) -> int:
         return 0
 
 
@@ -61,7 +61,7 @@ class SdlsOresat(SdlsEmpty):
         frame.tfdf.tfdz = frame.tfdf.tfdz + hmac_val
         return
 
-    def verify(self, TransferFrame, hmac_key: bytes) -> int:
+    def verify(self, frame: TransferFrame, hmac_key: bytes) -> int:
         sdls_header = frame.insert_zone
         payload = frame.tfdf.pack()[:-HMAC_LEN]
         authenticated_data = frame.header.pack() + sdls_header + payload
@@ -146,7 +146,7 @@ def apply_sdls(frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
     """
 
     try:
-        return SPI_LIST[frame.header.vcid].apply()
+        return SPI_LIST[frame.header.vcid].apply(frame, seq_num, hmac_key)
     except IndexError as e:
         raise ValueError(f"VCID {vcid} does not have corresponding SPI.") from e
 
@@ -170,6 +170,6 @@ def verify_sdls(frame: TransferFrame, hmac_key: bytes) -> int:
     """
 
     try:
-        return SPI_LIST[frame.header.vcid].verify()
+        return SPI_LIST[frame.header.vcid].verify(frame, hmac_key)
     except IndexError as e:
         raise ValueError(f"VCID {vcid} does not have corresponding SPI.") from e
