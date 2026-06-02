@@ -311,13 +311,13 @@ def _edl_req_sdo_write_unpack_cb(raw: bytes) -> tuple:
 
 
 def _edl_res_sdo_read_pack_cb(values: tuple) -> bytes:
-    res = struct.pack("<2I", *values[:2])
-    res += values[2]
+    res = struct.pack("<BHB2I", *values[:5])
+    res += values[5]
     return res
 
 
 def _edl_res_sdo_read_unpack_cb(raw: bytes) -> tuple:
-    fmt = "<2I"
+    fmt = "<BHB2I"
     size = struct.calcsize(fmt)
     res = struct.unpack(fmt, raw[:size])
     res += (raw[size:],)
