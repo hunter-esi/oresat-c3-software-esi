@@ -74,6 +74,7 @@ def get_hw_id(mock: bool) -> int:
 def watchdog():
     """Pet the watchdog app (which pets the watchdog circuit)."""
 
+    performance = True
     udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     loop = 0
 
@@ -83,7 +84,6 @@ def watchdog():
 
         failed = 0
         flight_mode = app.od["flight_mode"].value
-        performance = app.od["performance"].value
 
         for service in app._services:  # pylint: disable=W0212
             failed += int(service.status == ServiceState.FAILED)
@@ -96,12 +96,13 @@ def watchdog():
 
         updating = app.od["updater"]["status"].value == UpdaterState.UPDATING
         edl = app.od["status"].value == C3State.EDL
+        override = app.od["performance_override"].value
 
-        if not performance and (updating or edl):
+        if not performance and (updating or edl) or override:
             logger.info("setting cpufreq governor to performance mode")
             set_cpufreq_gov("performance")
             performance = True
-        elif performance and not updating and not edl:
+        elif performance and not updating and not edl or not override:
             logger.info("setting cpufreq governor to powersave mode")
             set_cpufreq_gov("powersave")
             performance = False
