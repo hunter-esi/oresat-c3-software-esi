@@ -102,12 +102,10 @@ def watchdog():
             logger.info("setting cpufreq governor to performance mode")
             set_cpufreq_gov("performance")
             performance = True
-            override = False
-        elif performance and not updating and not edl and not override:
+        elif performance and not (updating or edl or override):
             logger.info("setting cpufreq governor to powersave mode")
             set_cpufreq_gov("powersave")
             performance = False
-            override = True
 
 
 def main():
