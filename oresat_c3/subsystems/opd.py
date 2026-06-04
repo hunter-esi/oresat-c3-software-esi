@@ -471,6 +471,7 @@ class Opd:
         opd_type = {
             "none": OpdNode,
             "stm32": OpdStm32Node,
+            "mcxn": OpdStm32Node,
             "octavo": OpdOctavoNode,
         }
 
