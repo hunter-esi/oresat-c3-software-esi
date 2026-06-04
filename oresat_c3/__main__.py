@@ -98,14 +98,16 @@ def watchdog():
         edl = app.od["status"].value == C3State.EDL
         override = app.od["performance_override"].value
 
-        if not performance and (updating or edl) or override:
+        if not performance and (updating or edl or override):
             logger.info("setting cpufreq governor to performance mode")
             set_cpufreq_gov("performance")
             performance = True
-        elif performance and not updating and not edl or not override:
+            override = False
+        elif performance and not updating and not edl and not override:
             logger.info("setting cpufreq governor to powersave mode")
             set_cpufreq_gov("powersave")
             performance = False
+            override = True
 
 
 def main():
