@@ -299,7 +299,7 @@ class EdlCommandCode(IntEnum):
     
     CO_NODE_FLASH = auto()
     """
-    Flash a Zephyr/mcuboot image to a node using CANopen block download.
+    Flash a Zephyr/mcuboot image to a node using CANopen block or segmented download.
 
     Parameters
     ----------
@@ -307,6 +307,10 @@ class EdlCommandCode(IntEnum):
         The id of the CANopen node to write to.
     filename: str
         The name of the file cached on the C3 to flash.
+    throttle_delay: float, optional
+        Delay between packets (default: 0.0).
+    block_transfer: bool, optional
+        True for block download, False for segmented (default: True).
 
     Returns
     -------
@@ -342,14 +346,20 @@ def _edl_res_sdo_read_unpack_cb(raw: bytes) -> tuple:
 
 
 def _edl_req_node_flash_pack_cb(values: tuple) -> bytes:
-    node_id, filename = values
-    return bytes([node_id]) + filename.encode("utf-8")
+    node_id = values[0]
+    filename = values[1]
+    throttle_delay = values[2] if len(values) > 2 else 0.0
+    block_transfer = values[3] if len(values) > 3 else True
+    req = struct.pack("<Bf?", node_id, throttle_delay, block_transfer)
+    return req + filename.encode("utf-8")
 
 
 def _edl_req_node_flash_unpack_cb(raw: bytes) -> tuple:
-    node_id = raw[0]
-    filename = raw[1:].decode("utf-8").rstrip("\x00")
-    return (node_id, filename)
+    fmt = "<Bf?"
+    size = struct.calcsize(fmt)
+    node_id, throttle_delay, block_transfer = struct.unpack(fmt, raw[:size])
+    filename = raw[size:].decode("utf-8").rstrip("\x00")
+    return (node_id, filename, throttle_delay, block_transfer)
 
 
 EDL_COMMANDS = {
