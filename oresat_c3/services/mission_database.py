@@ -70,7 +70,7 @@ class MissionDatabaseService(Service):
     def update_files(self):
         new_file_name = new_oresat_file("gps-data", "c3", -1, ".csv")
         new_file_path = abspath(self.node.cache_base_dir + new_file_name)
-        print(f"MAKING FILE {new_file_name}")
+        logger.error(f"Making file {new_file_name}")
         with open(new_file_path, "w") as f:
             f.write(self.data)
         
@@ -80,11 +80,10 @@ class MissionDatabaseService(Service):
         files = self.node.fread_cache.files("gps-data")
         if len(files) > self._max_num_files.value:
             files = sorted(files)
-            print(f"DELETING FILE {files[0]}")
+            logger.error(f"Deleting file {files[0].name}")
             self.node.fread_cache.remove(files[0])
 
     def _set_csv_gps(self):
-        print("UPDATING CSV")
         """The way that I've set this up requests the values over the CANbus twice. Bad. Don't do that."""
         self.data += str(self._ecef_x.value) + ","
         self.data += str(self._ecef_y.value) + ","
@@ -98,7 +97,6 @@ class MissionDatabaseService(Service):
         self.data += str(secondstime) + "\n"
 
     def _set_od_gps(self):
-        print("UPDATING OD")
         append = f"_{self.next_gps}"
 
         self.node.od["hist_ecef_x"]["ecef_x" + append].value = self._ecef_x.value
