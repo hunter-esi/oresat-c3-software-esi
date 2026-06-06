@@ -52,7 +52,7 @@ class TestNodeFlasherService(unittest.TestCase):
             cache_dir=self.cache_dir,
             node_mgr=self.mock_node_mgr,
             throttle_delay=0.0,
-            request_crc=False
+            request_crc=False,
         )
 
         self.service.node = MagicMock()
@@ -64,21 +64,23 @@ class TestNodeFlasherService(unittest.TestCase):
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    @patch.object(NodeFlasherService, '_execute_flash')
+    @patch.object(NodeFlasherService, "_execute_flash")
     def test_on_loop_success(self, mock_execute):
         """Test that on_loop calls _execute_flash correctly."""
-        self.service.command_queue.put({
-            "node_id": TEST_NODE_ID,
-            "filename": "fw.bin",
-            "throttle_delay": 0.5,
-            "block_transfer": True
-        })
+        self.service.command_queue.put(
+            {
+                "node_id": TEST_NODE_ID,
+                "filename": "fw.bin",
+                "throttle_delay": 0.5,
+                "block_transfer": True,
+            }
+        )
 
         self.service.on_loop()
 
         mock_execute.assert_called_once_with(TEST_NODE_ID, "fw.bin", 0.5, True)
 
-    @patch.object(NodeFlasherService, '_execute_flash')
+    @patch.object(NodeFlasherService, "_execute_flash")
     def test_on_loop_empty(self, mock_execute):
         """Test that on_loop handles an empty queue."""
         self.service.on_loop()
@@ -111,18 +113,20 @@ class TestNodeFlasherService(unittest.TestCase):
         mock_outfile = MagicMock()
         self.mock_data_sdo.open.return_value = mock_outfile
 
-        self.service._execute_flash(TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True)
+        self.service._execute_flash(
+            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True
+        )
 
         self.mock_node_mgr.set_node_updating.assert_any_call(TEST_NODE_ID, True)
         self.assertEqual(self.mock_target_node.nmt.state, "PRE-OPERATIONAL")
 
         # Assert SDO operations
         self.mock_data_sdo.open.assert_called_once_with(
-            "wb", 
-            buffering=self.service.download_buffer_size, 
-            size=len(DUMMY_FIRMWARE_DATA), 
+            "wb",
+            buffering=self.service.download_buffer_size,
+            size=len(DUMMY_FIRMWARE_DATA),
             block_transfer=True,
-            request_crc_support=False
+            request_crc_support=False,
         )
         mock_outfile.write.assert_called_once_with(DUMMY_FIRMWARE_DATA)
         self.mock_target_node.nmt.wait_for_bootup.assert_called_once()
@@ -138,14 +142,18 @@ class TestNodeFlasherService(unittest.TestCase):
 
         original_send = self.service.node.network._network.bus.send
 
-        self.service._execute_flash(TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.1, block_transfer=True)
+        self.service._execute_flash(
+            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.1, block_transfer=True
+        )
 
         self.assertEqual(self.service.node.network._network.bus.send, original_send)
         self.assertFalse(os.path.exists(self.test_filepath))
 
     def test_execute_flash_file_not_found(self):
         """Test when file is missing."""
-        self.service._execute_flash(TEST_NODE_ID, "missing.bin", throttle_delay=0.0, block_transfer=True)
+        self.service._execute_flash(
+            TEST_NODE_ID, "missing.bin", throttle_delay=0.0, block_transfer=True
+        )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
     def test_execute_flash_invalid_node(self):
@@ -166,9 +174,11 @@ class TestNodeFlasherService(unittest.TestCase):
         self.mock_flash_sdo.raw = 99
 
         # Speedup test
-        self.service.status_timeout = 0.1 
+        self.service.status_timeout = 0.1
 
-        self.service._execute_flash(TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True)
+        self.service._execute_flash(
+            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True
+        )
 
         self.mock_node_mgr.set_node_updating.assert_called_with(TEST_NODE_ID, False)
         self.mock_target_node.nmt.wait_for_bootup.assert_not_called()

@@ -296,7 +296,7 @@ class EdlCommandCode(IntEnum):
     bytes
         Data buffer.
     """
-    
+
     CO_NODE_FLASH = auto()
     """
     Flash a Zephyr/mcuboot image to a node using CANopen block or segmented download.
@@ -393,10 +393,7 @@ EDL_COMMANDS = {
         _edl_res_sdo_read_unpack_cb,
     ),
     EdlCommandCode.CO_NODE_FLASH: EdlCommand(
-        None, 
-        "?", 
-        _edl_req_node_flash_pack_cb, 
-        _edl_req_node_flash_unpack_cb
+        None, "?", _edl_req_node_flash_pack_cb, _edl_req_node_flash_unpack_cb
     ),
 }
 """All valid EDL commands lookup table"""

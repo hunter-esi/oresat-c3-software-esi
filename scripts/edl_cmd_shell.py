@@ -457,17 +457,17 @@ class EdlCommandShell(Cmd):
                 return
 
         filename = args[1]
-        
+
         throttle_delay = 0.0
         block_transfer = True
-        
+
         if len(args) >= 3:
             try:
                 throttle_delay = float(args[2])
             except ValueError:
                 print("invalid throttle_delay arg. Must be a float.")
                 return
-                
+
         if len(args) >= 4:
             arg3 = args[3].lower()
             if arg3 in ["true", "1"]:
@@ -479,8 +479,7 @@ class EdlCommandShell(Cmd):
                 return
 
         response = self._send_packet(
-            EdlCommandCode.CO_NODE_FLASH, 
-            (node_id, filename, throttle_delay, block_transfer)
+            EdlCommandCode.CO_NODE_FLASH, (node_id, filename, throttle_delay, block_transfer)
         )
         if response is not None:
             print(f"Flash command sent. Response: {response}")

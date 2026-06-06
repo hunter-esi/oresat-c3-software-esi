@@ -34,10 +34,10 @@ class NodeFlasherService(Service):
         cache_dir: str,
         node_mgr,
         throttle_delay: float = 0.0,
-        # request_crc defaults to False due to a possible CRC calculation mismatch in 
-        # Zephyr's CANopenNode integration (depends on versioning). This is safe because 
+        # request_crc defaults to False due to a possible CRC calculation mismatch in
+        # Zephyr's CANopenNode integration (depends on versioning). This is safe because
         # MCUboot checks hash signatures of the firmware image before booting.
-        request_crc: bool = False, 
+        request_crc: bool = False,
         sdo_timeout: float = 3.0,
         sdo_retries: int = 3,
     ):
@@ -56,11 +56,7 @@ class NodeFlasherService(Service):
         self.sdo_retries = sdo_retries
 
     def enqueue_flash(
-        self, 
-        node_id: int, 
-        filename: str, 
-        throttle_delay: float = None, 
-        block_transfer: bool = None
+        self, node_id: int, filename: str, throttle_delay: float = None, block_transfer: bool = None
     ):
         """Called by EdlService to trigger a flash."""
         if throttle_delay is None:
@@ -68,12 +64,14 @@ class NodeFlasherService(Service):
         if block_transfer is None:
             block_transfer = self.block_transfer
 
-        self.command_queue.put({
-            "node_id": node_id, 
-            "filename": filename,
-            "throttle_delay": throttle_delay,
-            "block_transfer": block_transfer
-        })
+        self.command_queue.put(
+            {
+                "node_id": node_id,
+                "filename": filename,
+                "throttle_delay": throttle_delay,
+                "block_transfer": block_transfer,
+            }
+        )
         logger.info(
             f"Queued flash for Node 0x{node_id:02X} with file {filename} "
             f"(throttle_delay={throttle_delay}, block_transfer={block_transfer})"
@@ -83,10 +81,7 @@ class NodeFlasherService(Service):
         try:
             cmd = self.command_queue.get(timeout=QUEUE_GET_TIMEOUT)
             self._execute_flash(
-                cmd["node_id"], 
-                cmd["filename"], 
-                cmd["throttle_delay"], 
-                cmd["block_transfer"]
+                cmd["node_id"], cmd["filename"], cmd["throttle_delay"], cmd["block_transfer"]
             )
         except Empty:
             pass
@@ -101,7 +96,9 @@ class NodeFlasherService(Service):
             status = int(flash_sdo.raw)
         return status
 
-    def _execute_flash(self, node_id: int, filename: str, throttle_delay: float, block_transfer: bool):
+    def _execute_flash(
+        self, node_id: int, filename: str, throttle_delay: float, block_transfer: bool
+    ):
         filepath = os.path.join(self.cache_dir, filename)
 
         if not os.path.isfile(filepath):
@@ -114,7 +111,9 @@ class NodeFlasherService(Service):
             return
 
         if node_name not in self.node.remote_nodes:
-            logger.error(f"Node flasher aborted: Node {node_name} (0x{node_id:02X}) not in remote_nodes.")
+            logger.error(
+                f"Node flasher aborted: Node {node_name} (0x{node_id:02X}) not in remote_nodes."
+            )
             return
 
         target_node = self.node.remote_nodes[node_name]

@@ -250,7 +250,9 @@ class NodeManagerService(Service):
             node.status = state
 
         self._node_mgr["nodes_off"].value = count[NodeState.OFF]
-        self._node_mgr["nodes_booting"].value = count[NodeState.BOOT] + count.get(NodeState.UPDATING, 0)
+        self._node_mgr["nodes_booting"].value = count[NodeState.BOOT] + count.get(
+            NodeState.UPDATING, 0
+        )
         self._node_mgr["nodes_on"].value = count[NodeState.ON]
         self._node_mgr["nodes_with_errors"].value = count[NodeState.ERROR]
         self._node_mgr["nodes_not_found"].value = count[NodeState.NOT_FOUND]

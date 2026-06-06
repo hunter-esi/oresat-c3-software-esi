@@ -60,8 +60,8 @@ from ..protocols.edl_packet import SRC_DEST_UNICLOGS, EdlPacket, EdlPacketError,
 from ..subsystems.rtc import set_rtc_time, set_system_time_to_rtc_time
 from .beacon import BeaconService
 from .channel_router import ChannelRouterService
-from .node_manager import NodeManagerService
 from .node_flasher import NodeFlasherService
+from .node_manager import NodeManagerService
 
 
 class EdlService(Service):
@@ -366,10 +366,7 @@ class EdlService(Service):
             )
             try:
                 self._node_flasher_service.enqueue_flash(
-                    node_id, 
-                    filename, 
-                    throttle_delay=throttle_delay, 
-                    block_transfer=block_transfer
+                    node_id, filename, throttle_delay=throttle_delay, block_transfer=block_transfer
                 )
                 ret = True
             except Exception as e:

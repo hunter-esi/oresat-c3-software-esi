@@ -24,8 +24,8 @@ from .protocols.cachestore import CacheStore
 from .services.beacon import BeaconService
 from .services.channel_router import ChannelRouterService
 from .services.edl import EdlService
-from .services.node_manager import NodeManagerService
 from .services.node_flasher import NodeFlasherService
+from .services.node_manager import NodeManagerService
 from .services.radios import RadiosService
 from .services.state import StateService
 from .subsystems.rtc import set_system_time_to_rtc_time
@@ -136,7 +136,9 @@ def main():
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
     channel_router_service = ChannelRouterService(radios_service)
     node_flasher_service = NodeFlasherService(app.node.fwrite_cache.dir, node_mgr_service)
-    edl_service = EdlService(app.node, node_mgr_service, beacon_service, channel_router_service, node_flasher_service)
+    edl_service = EdlService(
+        app.node, node_mgr_service, beacon_service, channel_router_service, node_flasher_service
+    )
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
