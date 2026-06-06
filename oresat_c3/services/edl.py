@@ -172,9 +172,7 @@ class EdlService(Service):
         except Empty:
             return
         req_packet = self._frame_to_packet(frame)
-        if req_packet is None:
-            self.sleep_ms(50)
-        else:
+        if req_packet is not None:
             try:
                 res_payload = self._run_cmd(req_packet.payload)
                 if not res_payload.values:
@@ -194,13 +192,11 @@ class EdlService(Service):
             if self._file_receiver.state == CfdpState.BUSY:
                 res_payload = self._file_receiver.loop(None)
             else:
-                self.sleep_ms(50)
                 return
         else:
             res_payload = self._file_receiver.loop(req_packet.payload)
 
         if res_payload is None:
-            self.sleep_ms(50)
             return
 
         for payload in res_payload:
@@ -209,6 +205,7 @@ class EdlService(Service):
     def on_loop(self):
         self._process_command()
         self._process_cfdp()
+        self.sleep_ms(50)
 
     def _run_cmd(self, request: EdlCommandRequest) -> EdlCommandResponse:
         ret: Any = None

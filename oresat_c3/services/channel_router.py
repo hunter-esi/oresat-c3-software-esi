@@ -30,7 +30,7 @@ class ChannelRouterService(Service):
                 continue
 
         try:
-            message = self._radios_service.recv_queue.get_nowait()
+            message = self._radios_service.recv_queue.get(timeout=0.1)
         except Empty:
             return
 
