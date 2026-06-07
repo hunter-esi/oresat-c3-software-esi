@@ -81,7 +81,8 @@ class EdlService(Service):
             EdlVcid.C3_COMMAND
         )
         self._cmd_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
-            EdlVcid.C3_COMMAND
+            EdlVcid.C3_COMMAND,
+            use_cop=True,
         )
         self._file_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(
             EdlVcid.FILE_TRANSFER

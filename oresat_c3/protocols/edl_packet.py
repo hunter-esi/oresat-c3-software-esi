@@ -39,6 +39,7 @@ class EdlVcid(IntEnum):
 
     C3_COMMAND = 0
     FILE_TRANSFER = 1
+    IDLE = 2
 
 
 def gen_hmac(hmac_key: bytes, message: bytes) -> bytes:
