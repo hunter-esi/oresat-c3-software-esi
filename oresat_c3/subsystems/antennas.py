@@ -145,35 +145,32 @@ class AntennasC3v7:
     The v7 series uses the OPD to deploy the antennas.
     """
 
-    _TIMEOUT_CONFIG = 1
-
-    _I2C_BUS_NUM = 2  # FIXME: reimplementation of whats in node_manager. Bad and should be fixed.
-
     _READ_ANT_PIN = 0
     _FIRE_ANT_1_PIN = 1
     _FIRE_ANT_2_PIN = 2
     _TEST_ANT_PIN = 3
+    _LIVE_INPUTS = (1 << _READ_ANT_PIN) | (1 << _TEST_ANT_PIN)
+    _SAFE_INPUTS = _LIVE_INPUTS | (1 << _FIRE_ANT_1_PIN) | (1 << _FIRE_ANT_2_PIN)
 
-    def __init__(self, mock: bool = False) -> None:
+    # FIXME: i2c_bus_num is reimplementation of whats in node_manager. Bad and should be fixed.
+    def __init__(self, mock: bool = False, i2c_bus_num: int = 2) -> None:
         """
         Parameters
         ----------
         mock: bool
             Mock the hardware.
+        i2c_bus_num:
+            The /dev/i2c-n bus number to use.
         """
-        self._live_inputs = 1 << self._READ_ANT_PIN & 1 << self._TEST_ANT_PIN
-        self._safe_inputs = (
-            self._live_inputs & 1 << self._FIRE_ANT_1_PIN & 1 << self._FIRE_ANT_2_PIN
-        )
-
+        self._I2C_BUS_NUM = i2c_bus_num
         if not mock:
-            self._pz_end = Max7310(self._I2C_BUS_NUM, 0x14)
-            self._mz_end = Max7310(self._I2C_BUS_NUM, 0x15)
-            self._mz_mid = Max7310(self._I2C_BUS_NUM, 0x16)
+            self._pz_end = Max7310(i2c_bus_num, 0x14)
+            self._mz_end = Max7310(i2c_bus_num, 0x15)
+            self._mz_mid = Max7310(i2c_bus_num, 0x16)
         else:
-            self._pz_end = MockMax7310(self._I2C_BUS_NUM, 0x14, 0)
-            self._mz_end = MockMax7310(self._I2C_BUS_NUM, 0x15, 0)
-            self._mz_mid = MockMax7310(self._I2C_BUS_NUM, 0x16, 0)
+            self._pz_end = MockMax7310(i2c_bus_num, 0x14, 0)
+            self._mz_end = MockMax7310(i2c_bus_num, 0x15, 0)
+            self._mz_mid = MockMax7310(i2c_bus_num, 0x16, 0)
 
     def deploy(self, timeout: int, delay_between: int) -> None:
         """
@@ -187,31 +184,14 @@ class AntennasC3v7:
         delay_between: int
             Delay between the monopole and helical deployments.
         """
-        logger.info("Attempting pos z end card firing.")
-        self._deploy_card(self._pz_end, timeout, "pos z end")
-        sleep(delay_between)
         logger.info("Attempting minus z end card firing.")
         self._deploy_card(self._mz_end, timeout, "minuz z end")
         sleep(delay_between)
+        logger.info("Attempting pos z end card firing.")
+        self._deploy_card(self._pz_end, timeout, "pos z end")
+        sleep(delay_between)
         logger.info("Attempting minus z mid card firing.")
         self._deploy_card(self._mz_mid, timeout, "minus z mid")
-
-    def _probe(self, card: Max7310, name: str) -> bool:
-        """
-        Attempt to define and confirm the existence of as particular card.
-        """
-        if not card.is_valid:
-            logger.info(f"Could not find {name} card.")
-            return False
-        logger.info(f"Found {name} card.")
-
-        try:
-            card.configure(0, 0, self._safe_inputs, self._TIMEOUT_CONFIG)
-        except Max7310Error as e:
-            logger.error(f"MAX7310 error: {e}")
-            logger.info(f"Failed to setup {name} card with error.")
-            return False
-        return True
 
     def _deploy_card(self, card: Max7310, timeout: int, name: str) -> None:
         """
@@ -221,22 +201,18 @@ class AntennasC3v7:
         ----------
         timeout: int
             How long the gpio lines are set high.
+        name:
+            The name of the card being deployed.
         """
-        if not self._probe(card, name):
-            return
-
+        fire = (1 << self._FIRE_ANT_1_PIN) | (1 << self._FIRE_ANT_2_PIN)
         try:
-            card.configure(0, 0, self._live_inputs, self._TIMEOUT_CONFIG)
-            card.output_set(self._FIRE_ANT_1_PIN)
-            card.output_set(self._FIRE_ANT_2_PIN)
+            card.configure(configuration=self._LIVE_INPUTS, polarity_inversion=0, output_port=fire)
             sleep(timeout)
-
-            card.output_clear(self._FIRE_ANT_1_PIN)
-            card.output_clear(self._FIRE_ANT_2_PIN)
+            card.output_clear(self._FIRE_ANT_1_PIN, self._FIRE_ANT_2_PIN)
         except Max7310Error as e:
-            logger.error(f"MAX7310 error: {e}")
+            logger.error(f"Deploy: {e}")
             logger.info(f"Tried and failed to fire {name} card deployer.")
 
         # Unconditionally try to safe the antenna pins
         with suppress(Max7310Error):
-            card.configure(0, 0, self._safe_inputs, self._TIMEOUT_CONFIG)
+            card.configuration = self._SAFE_INPUTS
