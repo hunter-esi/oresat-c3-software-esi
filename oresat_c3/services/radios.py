@@ -140,13 +140,15 @@ class RadiosService(Service):
     def uhf_on(self):
         self.uhf = True
         self._uhf_enable_gpio.high()
-        self.node.daemons["uhf"].start()
+        if "uhf" in self.node.daemons:
+            self.node.daemons["uhf"].start()
         self.sleep_ms(200)
         self.uhf_tot_clear()
 
     def uhf_off(self):
         self.sleep_ms(100)
-        self.node.daemons["uhf"].stop()
+        if "uhf" in self.node.daemons:
+            self.node.daemons["uhf"].stop()
         self._uhf_enable_gpio.low()
         self.uhf = False
 

@@ -187,8 +187,12 @@ class EdlService(Service):
         try:
             frame = self._file_uplink.get_nowait()
         except Empty:
-            return
-        req_packet = self._frame_to_packet(frame)
+            frame = None
+
+        if frame is not None:
+            req_packet = self._frame_to_packet(frame)
+        else:
+            req_packet = None
 
         if req_packet is None:
             if self._file_receiver.state == CfdpState.BUSY:
