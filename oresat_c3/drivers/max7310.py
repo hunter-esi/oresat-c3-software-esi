@@ -89,7 +89,7 @@ class Max7310:
             with SMBus(self._bus_num) as bus:
                 bus.i2c_rdwr(write, read)
         except (TimeoutError, OSError) as e:
-            raise Max7310Error(f"MAX7310 at address {self._addr:#02x} does not exist") from e
+            raise Max7310Error(f"MAX7310 @ {self._addr:#02x} error: {e}") from e
 
         return ord(read.buf[0])
 
@@ -103,14 +103,14 @@ class Max7310:
             with SMBus(self._bus_num) as bus:
                 bus.i2c_rdwr(write)
         except (TimeoutError, OSError) as e:
-            raise Max7310Error(f"MAX7310 at address 0x{self._addr:02X} does not exist") from e
+            raise Max7310Error(f"MAX7310 @ 0x{self._addr:02X} error: {e}") from e
 
     def _valid_pin(self, pin_num: int) -> None:
         if not 0 <= pin_num < 8:
             raise Max7310Error(f"invalid pin_num: {pin_num}, must be between 0 and 7")
 
     def configure(
-        self, output_port: int, polarity_inversion: int, configuration: int, timeout: int
+        self, output_port: int, polarity_inversion: int, configuration: int, timeout: int = 1
     ) -> None:
         """
         Configure the MAX7310 registers.
@@ -127,10 +127,10 @@ class Max7310:
             The value to write to the timeout register.
         """
 
-        self._i2c_write_reg(Max7310Reg.OUTPUT_PORT, output_port)
-        self._i2c_write_reg(Max7310Reg.POLARITY_INVERSION, polarity_inversion)
-        self._i2c_write_reg(Max7310Reg.CONFIGURATION, configuration)
         self._i2c_write_reg(Max7310Reg.TIMEOUT, timeout)
+        self._i2c_write_reg(Max7310Reg.POLARITY_INVERSION, polarity_inversion)
+        self._i2c_write_reg(Max7310Reg.OUTPUT_PORT, output_port)
+        self._i2c_write_reg(Max7310Reg.CONFIGURATION, configuration)
 
     def reset(self) -> None:
         """Reset the registers of the MAX7310 back to the default values."""
@@ -140,7 +140,7 @@ class Max7310:
         self._i2c_write_reg(Max7310Reg.POLARITY_INVERSION, 0xF0)
         self._i2c_write_reg(Max7310Reg.TIMEOUT, 0x01)
 
-    def output_set(self, pin_num: int) -> None:
+    def output_set(self, pin_num: int, /, *args: int) -> None:
         """
         Set a output pin / port.
 
@@ -149,14 +149,17 @@ class Max7310:
         pin_num: int
             The pin / port to set.
         """
-
         self._valid_pin(pin_num)
+        value = 1 << pin_num
+        for pin in args:
+            self._valid_pin(pin)
+            value |= 1 << pin
 
         result = self._i2c_read_reg(Max7310Reg.OUTPUT_PORT)
-        result |= 1 << pin_num
+        result |= value
         self._i2c_write_reg(Max7310Reg.OUTPUT_PORT, result)
 
-    def output_clear(self, pin_num: int) -> None:
+    def output_clear(self, pin_num: int, /, *args: int) -> None:
         """
         Clear a output pin / port.
 
@@ -167,9 +170,13 @@ class Max7310:
         """
 
         self._valid_pin(pin_num)
+        value = 1 << pin_num
+        for pin in args:
+            self._valid_pin(pin)
+            value |= 1 << pin
 
         result = self._i2c_read_reg(Max7310Reg.OUTPUT_PORT)
-        result &= ~(1 << pin_num)
+        result &= ~value
         self._i2c_write_reg(Max7310Reg.OUTPUT_PORT, result)
 
     def output_status(self, pin_num: int) -> bool:
@@ -221,6 +228,12 @@ class Max7310:
         """int: Value from the configuration register."""
 
         return self._i2c_read_reg(Max7310Reg.CONFIGURATION)
+
+    @configuration.setter
+    def configuration(self, value: int) -> None:
+        """value: Value to write to the configuration register."""
+
+        self._i2c_write_reg(Max7310Reg.CONFIGURATION, value)
 
     @property
     def timeout(self) -> int:
