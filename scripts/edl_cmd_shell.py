@@ -11,7 +11,6 @@ from typing import Any, Union
 
 import canopen
 from oresat_configs import Mission, OreSatConfig
-
 from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
 
 from oresat_c3.protocols.uslp import unpack_frame

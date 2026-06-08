@@ -48,9 +48,8 @@ from spacepackets.cfdp.tlv import (
 )
 from spacepackets.countdown import Countdown
 from spacepackets.seqcount import SeqCountProvider
-from spacepackets.util import ByteFieldU8
-
 from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
+from spacepackets.util import ByteFieldU8
 
 from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket, EdlVcid
 from oresat_c3.protocols.uslp import unpack_frame
