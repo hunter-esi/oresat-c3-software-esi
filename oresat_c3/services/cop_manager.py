@@ -33,10 +33,9 @@ class CopManagerService(Service):
         try:
             frame = self.recv_queue.get_nowait()
             srv, q = self._farms.get(frame.header.vcid, (None, None))
-            print(srv)
             if srv is not None:
-                if srv.lower_interface.buffer.appendleft(frame):
-                    srv.lower_interface.signal.appendleft(
+                if srv.lower_interface.buffer.try_appendleft(frame):
+                    srv.lower_interface.signal.try_appendleft(
                         ValidFrameArrivedIndication(
                             Gvcid(0b1100, frame.header.scid, frame.header.vcid)
                         )

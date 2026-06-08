@@ -19,7 +19,7 @@ from spacepackets.uslp.frame import (
 SPACECRAFT_ID = 0x4F53  # aka "OS" in ASCII
 
 PRIMARY_HEADER_LEN = 7
-SEQ_NUM_LEN = 4
+SEQ_NUM_LEN = 6
 DFH_LEN = 1
 HMAC_LEN = 32
 FECF_LEN = 2
