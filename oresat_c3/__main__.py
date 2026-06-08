@@ -136,7 +136,7 @@ def main():
     mock_args = [i.lower() for i in args.mock_hw]
     mock_hw = len(mock_args) != 0
 
-    cop1_logger = logging.getLogger("ccsds-cop.cop1")
+    cop1_logger = logging.getLogger("ccsds_cop")
     cop1_logger.handlers = [InterceptHandler()]
     if args.verbose:
         cop1_logger.setLevel(logging.DEBUG)
