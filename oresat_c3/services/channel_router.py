@@ -124,7 +124,7 @@ class ChannelRouterService(Service):
         if vcid in self._downlink_routes:
             raise KeyError(f"Downlink route for VCID={vcid} already exists")
         else:
-            q = SimpleQueue()
+            q: SimpleQueue[bytes] = SimpleQueue()
             self._downlink_routes[vcid] = q
             logger.info(f"Created downlink route for VCID {vcid}")
             return q
