@@ -23,14 +23,15 @@ class ChannelRouterService(Service):
 
     def on_loop(self) -> None:
         for dl in self._downlink_routes.values():
-            try:
-                msg = dl.get_nowait()
-                self._radios_service.send_edl_response(msg)
-            except Empty:
-                continue
+            while True:
+                try:
+                    msg = dl.get_nowait()
+                    self._radios_service.send_edl_response(msg)
+                except Empty:
+                    break
 
         try:
-            message = self._radios_service.recv_queue.get_nowait()
+            message = self._radios_service.recv_queue.get(timeout=0.1)
         except Empty:
             return
 
