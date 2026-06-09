@@ -11,13 +11,14 @@ from typing import Any, Union
 
 import canopen
 from oresat_configs import Mission, OreSatConfig
+from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
 
 from oresat_c3.protocols.uslp import unpack_frame
 
 sys.path.insert(0, os.path.abspath(".."))
 
 from oresat_c3.protocols.edl_command import EDL_COMMANDS, EdlCommandCode, EdlCommandRequest
-from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket
+from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket, EdlVcid
 
 
 class EdlCommandShell(Cmd):
@@ -54,7 +55,7 @@ class EdlCommandShell(Cmd):
         try:
             # make packet
             req = EdlCommandRequest(code, args)
-            req_packet = EdlPacket(req, self._seq_num, SRC_DEST_ORESAT)
+            req_packet = EdlPacket(req, self._seq_num, SRC_DEST_ORESAT, bypass=True)
             req_packet_raw = req_packet.pack(self._hmac_key)
 
             # send request
@@ -62,10 +63,16 @@ class EdlCommandShell(Cmd):
 
             edl_command = EDL_COMMANDS[code]
             if edl_command.res_fmt is not None or edl_command.res_unpack_func is not None:
-                # recv response
-                res_packet_raw = self._downlink_socket.recv(1024)
-                # parse respone
-                frame = unpack_frame(res_packet_raw)
+                for _ in range(10):
+                    res_packet_raw = self._downlink_socket.recv(1024)
+                    try:
+                        frame = unpack_frame(res_packet_raw)
+                    except UslpInvalidRawPacketOrFrameLenError:
+                        continue
+                    if frame.header.vcid == EdlVcid.C3_COMMAND:
+                        break
+                else:
+                    raise TimeoutError("No C3_COMMAND response received after 10 attempts")
                 res_packet = EdlPacket.from_frame(frame, self._hmac_key)
             self._seq_num += 1
         except Exception as e:  # pylint: disable=W0718

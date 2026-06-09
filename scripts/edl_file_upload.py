@@ -48,9 +48,10 @@ from spacepackets.cfdp.tlv import (
 )
 from spacepackets.countdown import Countdown
 from spacepackets.seqcount import SeqCountProvider
+from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
 from spacepackets.util import ByteFieldU8
 
-from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket
+from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket, EdlVcid
 from oresat_c3.protocols.uslp import unpack_frame
 
 sys.path.insert(0, os.path.abspath(".."))
@@ -139,7 +140,7 @@ class Uplink(Thread):
                 print("---X DROPPED", payload)
                 continue  # simulate dropped packets
             print("--->", payload)
-            packet = EdlPacket(payload, self._sequence_number, SRC_DEST_ORESAT)
+            packet = EdlPacket(payload, self._sequence_number, SRC_DEST_ORESAT, bypass=True)
             message = packet.pack(self._hmac_key)
             uplink.send(message)
             print("Current sequence number:", self._sequence_number)
@@ -168,7 +169,12 @@ class Downlink(Thread):
 
         while True:
             message = downlink.recv(4096)
-            frame = unpack_frame(message)
+            try:
+                frame = unpack_frame(message)
+            except UslpInvalidRawPacketOrFrameLenError:
+                continue
+            if frame.header.vcid != EdlVcid.FILE_TRANSFER:
+                continue
             packet = EdlPacket.from_frame(frame, self._hmac_key, True).payload
             if self._bad_connection and not random.randrange(5):
                 print("X--- DROPPED", packet)

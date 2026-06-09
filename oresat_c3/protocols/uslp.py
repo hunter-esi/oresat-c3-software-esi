@@ -19,7 +19,7 @@ from spacepackets.uslp.frame import (
 SPACECRAFT_ID = 0x4F53  # aka "OS" in ASCII
 
 PRIMARY_HEADER_LEN = 7
-SEQ_NUM_LEN = 4
+SEQ_NUM_LEN = 6
 DFH_LEN = 1
 HMAC_LEN = 32
 FECF_LEN = 2
@@ -86,6 +86,7 @@ def make_frame(
     vcf_count: Optional[int] = None,
     control_word: Optional[bytes] = None,
     insert_zone: Optional[bytes] = None,
+    bypass: bool = False,
 ) -> TransferFrame:
     """Create and pack a USLP
 
@@ -103,6 +104,8 @@ def make_frame(
         The CLCW, if any, to pack in the frame.
     insert_zone
         The insert zone data, if any.
+    bypass
+        Specify if this frame is bypass (Type-BD) frame.
 
     Returns
     -------
@@ -121,7 +124,7 @@ def make_frame(
     if insert_zone:
         frame_len += len(insert_zone)
 
-    has_clcw = bool(control_word)
+    has_clcw = control_word is not None
     if has_clcw:
         frame_len += len(control_word)
 
@@ -135,7 +138,11 @@ def make_frame(
         vcf_count=vcf_count,
         op_ctrl_flag=has_clcw,
         prot_ctrl_cmd_flag=ProtocolCommandFlag.USER_DATA,
-        bypass_seq_ctrl_flag=BypassSequenceControlFlag.SEQ_CTRLD_QOS,
+        bypass_seq_ctrl_flag=(
+            BypassSequenceControlFlag.EXPEDITED_QOS
+            if bypass
+            else BypassSequenceControlFlag.SEQ_CTRLD_QOS
+        ),
     )
 
     return TransferFrame(

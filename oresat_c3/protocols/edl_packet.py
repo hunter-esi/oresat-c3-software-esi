@@ -39,6 +39,7 @@ class EdlVcid(IntEnum):
 
     C3_COMMAND = 0
     FILE_TRANSFER = 1
+    IDLE = 2
 
 
 def gen_hmac(hmac_key: bytes, message: bytes) -> bytes:
@@ -59,6 +60,7 @@ class EdlPacket:
         payload: Union[EdlCommandRequest, EdlCommandResponse, AbstractPduBase],
         seq_num: int,
         src_dest: SourceOrDestField,
+        bypass: bool = False,
     ):
         """
         Parameters
@@ -69,6 +71,8 @@ class EdlPacket:
             The sequence number for packet.
         src_dest: SourceOrDestFiedld
             Origin of packet, use `SRC_DEST_ORESAT` or `SRC_DEST_UNICLOGS`.
+        bypass: bool
+            If True, send as a Type-BD (bypass) frame, skipping COP-1 sequence checking.
         """
 
         if isinstance(payload, (EdlCommandRequest, EdlCommandResponse)):
@@ -82,6 +86,7 @@ class EdlPacket:
         self.src_dest = src_dest
         self.seq_num = seq_num
         self.payload = payload
+        self.bypass = bypass
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, EdlPacket):
@@ -116,6 +121,7 @@ class EdlPacket:
             vcid=self.vcid.value,
             src_dest=self.src_dest,
             insert_zone=seq_num_bytes,
+            bypass=self.bypass,
         )
         return frame.pack(frame_type=FrameType.VARIABLE)
 
