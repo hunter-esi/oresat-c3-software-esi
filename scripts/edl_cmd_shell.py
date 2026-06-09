@@ -77,7 +77,7 @@ class EdlCommandShell(Cmd):
             self._seq_num += 1
         except Exception as e:  # pylint: disable=W0718
             print(e)
-            return tuple()
+            return ()
 
         ret = None
         if res_packet and res_packet.payload.values:

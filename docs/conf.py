@@ -14,7 +14,7 @@ from oresat_c3 import __version__  # pylint: disable=E0401
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "OreSat C3"
-copyright = f"{datetime.now().year}, Portland State Aerospace Society"  # pylint: disable=W0622
+copyright = f"{datetime.now().year}, Portland State Aerospace Society"  # noqa: A001
 author = "PSAS"
 release = __version__
 

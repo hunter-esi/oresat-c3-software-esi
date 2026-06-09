@@ -59,6 +59,18 @@ line-length = 100
 [tool.ruff.format]
 quote-style = "preserve"
 
+[tool.ruff.lint]
+select = [
+    "A",
+    "C4",
+    "E",
+    "F",
+    "I",
+    "PERF",
+    "RUF",
+    "W",
+]
+
 [tool.pylama]
 format = "pylint"
 skip = "*/.tox/*,*/.env/,*/.git/*,*/.github/*,*/build/*,.direnv/*"

@@ -33,7 +33,7 @@ class CopManagerService(Service):
     def _process_farm_lower(self) -> None:
         try:
             frame = self.recv_queue.get_nowait()
-            srv, q = self._farms.get(frame.header.vcid, (None, None))
+            srv, _ = self._farms.get(frame.header.vcid, (None, None))
             if srv is not None:
                 if srv.lower_interface.buffer.try_appendleft(frame):
                     srv.lower_interface.signal.try_appendleft(
