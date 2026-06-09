@@ -89,8 +89,5 @@ class TestEdlPacket(unittest.TestCase):
             INVALID = 20
 
         edl_packet_req.vcid = TestEnum.INVALID
-        req = edl_packet_req.pack(self.hmac_key)
-
-        frame = unpack_frame(req)
-        with self.assertRaises(ValueError or IndexError):
-            EdlPacket.from_frame(frame, self.hmac_key)
+        with self.assertRaises(IndexError and ValueError):
+            edl_packet_req.pack(self.hmac_key)
