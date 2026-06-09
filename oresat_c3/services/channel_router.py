@@ -1,13 +1,17 @@
-from queue import Empty, Queue, SimpleQueue
-from typing import Union
+from __future__ import annotations
 
+from queue import Empty, SimpleQueue
+from time import monotonic
+
+from ccsds_cop.cop_1 import ControlWord, CopService
+from ccsds_cop.cop_1.farm import Farm1
 from olaf import Service, logger
 from spacepackets.uslp import TransferFrame
+from spacepackets.uslp.frame import FrameType
+from spacepackets.uslp.header import SourceOrDestField
 
-from ..protocols.cop1 import ControlWord, ServiceInterface
-from ..protocols.cop1.farm import Farm1, FarmHigherServiceInterface, ValidFrameArrivedIndication
 from ..protocols.edl_packet import EdlVcid
-from ..protocols.uslp import Gvcid, unpack_frame
+from ..protocols.uslp import SEQ_NUM_LEN, make_frame, unpack_frame
 from .cop_manager import CopManagerService
 from .radios import RadiosService
 
@@ -19,90 +23,126 @@ class ChannelRouterService(Service):
     valid frames into the appropriate queue.
     """
 
-    QUEUE_SIZE = 256
+    _CLCW_INTERVAL = 1.0
 
     def __init__(self, radios_service: RadiosService, cop_service: CopManagerService):
         super().__init__()
         self._radios_service = radios_service
         self._cop_service = cop_service
-        self._routes: dict[EdlVcid, Union[SimpleQueue[TransferFrame], ServiceInterface]] = {}
+        self._uplink_routes: dict[EdlVcid, SimpleQueue[TransferFrame]] = {}
+        self._downlink_routes: dict[EdlVcid, SimpleQueue[bytes]] = {}
+        self._last_clcw_time = 0.0
 
     def on_loop(self) -> None:
+        for dl in self._downlink_routes.values():
+            while True:
+                try:
+                    msg = dl.get_nowait()
+                    self._radios_service.send_edl_response(msg)
+                except Empty:
+                    break
+
+        now = monotonic()
+        if now - self._last_clcw_time >= self._CLCW_INTERVAL:
+            for clcw in self._get_all_clcw():
+                frame = make_frame(
+                    payload=bytes(1),
+                    vcid=EdlVcid.IDLE,
+                    src_dest=SourceOrDestField.SOURCE,
+                    control_word=clcw.pack(),
+                    insert_zone=bytes(SEQ_NUM_LEN),
+                )
+                self._radios_service.send_edl_response(frame.pack(frame_type=FrameType.VARIABLE))
+            self._last_clcw_time = now
+
         try:
-            message = self._radios_service.recv_queue.get_nowait()
+            message = self._radios_service.recv_queue.get(timeout=0.1)
         except Empty:
             return
 
         try:
             frame = unpack_frame(message)
             vcid = frame.header.vcid
-            if vcid in self._routes:
-                route = self._routes[vcid]
-                if isinstance(route, ServiceInterface):
-                    if route.buffer.appendleft(frame):
-                        route.signal.appendleft(
-                            ValidFrameArrivedIndication(
-                                Gvcid(0b1100, frame.header.scid, frame.header.vcid)
-                            )
-                        )
-                    else:
-                        logger.error(f"{vcid} lower queue full: frame discarded")
-                else:
-                    route.put_nowait(frame)
+            if vcid in self._uplink_routes:
+                self._uplink_routes[vcid].put_nowait(frame)
             else:
                 logger.error(f"No route for VCID {frame.header.vcid}")
 
         except Exception as e:
             logger.exception(f"Failed to unpack frame: {e}")
 
-    def request_route(
-        self, vcid: EdlVcid, cop: bool = False
-    ) -> Union[SimpleQueue[TransferFrame], FarmHigherServiceInterface]:
-        """Request the creation of a route from the radios.
+    def request_uplink_route(
+        self, vcid: EdlVcid, use_cop: bool = False
+    ) -> SimpleQueue[TransferFrame]:
+        """Request an uplink Virtual Channel route.
 
         Parameters
         ----------
-        vcid : EdlVcid
-            The Virtual Channel Identifier for this channel route. Only one route can exist per VCID.
-        cop : bool
-            Enable the COP-1 service on this channel. Currently only supports FARM-1 (receive).
+        vcid
+            The VCID used to identify the route.
+        use_cop
+            True enables COP-1 (FARM-1) on this route.
 
         Returns
         -------
-        Union[SimpleQueue[TransferFrame], ServiceInterface]
-            Access to a Queue through which all valid USLP frames exit the route.
-            If `cop` is `False`, frames are directly forwarded to the returned SimpleQueue.
-            Otherwise, the COP service's higher ServiceInterface is returned, allowing access to the
-            service's buffer and signal queue.
+        SimpleQueue[TransferFrame]
+            The queue from which received uplink frames for the VCID may be fetched.
 
         Raises
         ------
         KeyError
-            The route already exists for the given VCID.
+            A route for `vcid` has already been claimed.
+        """
+        if vcid in self._uplink_routes:
+            raise KeyError(f"Uplink route for VCID={vcid} already exists")
+        if use_cop:
+            q = self._cop_service.create_farm_service(vcid)
+            self._uplink_routes[vcid] = self._cop_service.recv_queue
+        else:
+            q = SimpleQueue()
+            self._uplink_routes[vcid] = q
+        return q
 
+    def request_downlink_route(self, vcid: EdlVcid) -> SimpleQueue[bytes]:
+        """Request a downlink Virtual Channel route.
+
+        Parameters
+        ----------
+        vcid
+            The VCID used to identify the route.
+
+        Returns
+        -------
+        SimpleQueue[bytes]
+            A queue to place packed frames for downlinking.
+
+        Raises
+        ------
+        KeyError
+            A route for `vcid` has already been claimed.
         """
 
-        if vcid in self._routes:
-            raise KeyError(f"Route already exists: {vcid}")
-        if cop:
-            low_interface, out = self._cop_service.create_service(vcid)
-            self._routes[vcid] = low_interface
+        if vcid in self._downlink_routes:
+            raise KeyError(f"Downlink route for VCID={vcid} already exists")
         else:
-            out: Queue[TransferFrame] = Queue(ChannelRouterService.QUEUE_SIZE)
-            self._routes[vcid] = out
-        logger.info(f"Created route for VCID {vcid}, cop={cop}")
-        return out
+            q: SimpleQueue[bytes] = SimpleQueue()
+            self._downlink_routes[vcid] = q
+            logger.info(f"Created downlink route for VCID {vcid}")
+            return q
 
-    def get_control_word(self, vcid: EdlVcid) -> ControlWord:
-        service = self._cop_service.get_service(vcid)
-        if service is None or not isinstance(service, Farm1):
-            raise ValueError(f"VCID {vcid} is not FARM-1")
-        service: Farm1 = service
-        return ControlWord(
-            vcid=vcid,
-            lockout=service.lockout,
-            wait=service.wait,
-            retransmit=service.retransmit,
-            farm_b_counter=service.b_counter,
-            report_value=service.receiver_frame_sequence_number,
-        )
+    def _get_all_clcw(self) -> list[ControlWord]:
+        clcws = []
+        for v in self._uplink_routes.keys():
+            srv: CopService | None = self._cop_service.get_service(v)
+            if isinstance(srv, Farm1):
+                clcws.append(
+                    ControlWord(
+                        vcid=v,
+                        lockout=srv.lockout,
+                        wait=srv.wait,
+                        retransmit=srv.retransmit,
+                        farm_b_counter=srv.b_counter,
+                        report_value=srv.v_r,
+                    )
+                )
+        return clcws

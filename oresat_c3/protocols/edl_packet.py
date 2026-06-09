@@ -2,24 +2,15 @@
 Anything dealing with packing and unpacking EDL (Engineering Data Link) packets.
 """
 
+import hashlib
+import hmac
 from enum import IntEnum
-from typing import Optional, Union
+from typing import Union
 
 from spacepackets.cfdp.pdu import PduFactory
 from spacepackets.cfdp.pdu.file_directive import AbstractPduBase
-from spacepackets.uslp.frame import (  # type: ignore
-    FrameType,
-    TfdzConstructionRules,
-    TransferFrame,
-    TransferFrameDataField,
-    UslpProtocolIdentifier,
-)
-from spacepackets.uslp.header import (  # type: ignore
-    BypassSequenceControlFlag,
-    PrimaryHeader,
-    ProtocolCommandFlag,
-    SourceOrDestField,
-)
+from spacepackets.uslp.frame import FrameType, TransferFrame
+from spacepackets.uslp.header import SourceOrDestField
 
 from .edl_command import EdlCommandCode, EdlCommandError, EdlCommandRequest, EdlCommandResponse
 from .uslp import make_frame
@@ -38,7 +29,7 @@ class EdlVcid(IntEnum):
 
     C3_COMMAND = 0
     FILE_TRANSFER = 1
-
+    IDLE = 2
 
 
 class EdlPacket:
@@ -53,6 +44,7 @@ class EdlPacket:
         payload: Union[EdlCommandRequest, EdlCommandResponse, AbstractPduBase],
         seq_num: int,
         src_dest: SourceOrDestField,
+        bypass: bool = False,
     ):
         """
         Parameters
@@ -63,6 +55,8 @@ class EdlPacket:
             The sequence number for packet.
         src_dest: SourceOrDestFiedld
             Origin of packet, use `SRC_DEST_ORESAT` or `SRC_DEST_UNICLOGS`.
+        bypass: bool
+            If True, send as a Type-BD (bypass) frame, skipping COP-1 sequence checking.
         """
 
         if isinstance(payload, (EdlCommandRequest, EdlCommandResponse)):
@@ -76,6 +70,7 @@ class EdlPacket:
         self.src_dest = src_dest
         self.seq_num = seq_num
         self.payload = payload
+        self.bypass = bypass
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, EdlPacket):
@@ -87,14 +82,12 @@ class EdlPacket:
             and self.payload == other.payload
         )
 
-    def pack(self, hmac_key: bytes, control_word: Optional[bytes] = None) -> bytes:
+    def pack(self, hmac_key: bytes) -> bytes:
         """
         Pack the EDL packet.
 
         Parameters
         ----------
-        control_word : Optional[bytes]
-            Send a control word with the frame.
         hmac_key: bytes
             The HMAC key to use.
         """
@@ -105,10 +98,9 @@ class EdlPacket:
             raise EdlPacketError(e) from e
 
         frame = make_frame(
-            payload=payload_raw,
+            payload=tfdz,
             vcid=self.vcid.value,
             src_dest=self.src_dest,
-            control_word=control_word,
             sequence_number=self.seq_num,
             hmac_key=hmac_key
         )

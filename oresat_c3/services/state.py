@@ -13,7 +13,7 @@ from olaf import NodeStop, Service, UpdaterState, logger
 
 from .. import C3State
 from ..drivers.fm24cl64b import Fm24cl64b
-from ..subsystems.antennas import Antennas
+from ..subsystems.antennas import AntennasC3v6, AntennasC3v7
 from ..subsystems.rtc import set_rtc_time
 
 
@@ -26,10 +26,10 @@ class StateService(Service):
 
     def __init__(self, fram_objs: list, mock_hw: bool = False):
         super().__init__()
-
+        self._mock_hw = mock_hw
         self._fram_objs = fram_objs
         self._fram = Fm24cl64b(self.I2C_BUS_NUM, self.FRAM_I2C_ADDR, mock_hw)
-        self._antennas = Antennas(mock_hw)
+
         self._attempts = 0
         self._loops = 0
         self._last_state = C3State.OFFLINE
@@ -74,6 +74,11 @@ class StateService(Service):
         self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
         self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
 
+        if self.node.od["versions"]["hw_version"].value.startswith("6"):
+            self._antennas = AntennasC3v6(self._mock_hw)
+        else:
+            self._antennas = AntennasC3v7(self._mock_hw)
+
         self.restore_state()
         if not self._tx_enable_obj.value:
             self._last_tx_enable_obj.value = 0
@@ -113,7 +118,6 @@ class StateService(Service):
 
         result = subprocess.run(
             ["systemctl", "stop", "oresat-c3-watchdog"],
-            shell=True,
             check=False,
             capture_output=True,
         )

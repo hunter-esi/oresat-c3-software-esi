@@ -12,8 +12,10 @@ from typing import Generator, Union
 
 sys.path.insert(0, os.path.abspath(".."))
 
+from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
+
 from oresat_c3.protocols.edl_command import EdlCommandCode, EdlCommandRequest
-from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket
+from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket, EdlVcid
 from oresat_c3.protocols.uslp import unpack_frame
 
 
@@ -79,7 +81,9 @@ class Link:
 
         self.sequence_number = self.sequence_number + 1 & 0xFFFF_FFFF
         request = EdlCommandRequest(EdlCommandCode.PING, (value,))
-        message = EdlPacket(request, self.sequence_number, SRC_DEST_ORESAT).pack(self.hmac)
+        message = EdlPacket(request, self.sequence_number, SRC_DEST_ORESAT, bypass=True).pack(
+            self.hmac
+        )
 
         self._uplink.send(message)
         self.sent_times[value] = monotonic()
@@ -116,8 +120,13 @@ class Link:
         for t in timeout:
             self._downlink.settimeout(t)
             response = self._downlink.recv(4096)
-            frame = unpack_frame(response)
-            payload = EdlPacket.unpack(frame, self.hmac).payload.values[0]
+            try:
+                frame = unpack_frame(response)
+            except UslpInvalidRawPacketOrFrameLenError:
+                continue
+            if frame.header.vcid != EdlVcid.C3_COMMAND:
+                continue
+            payload = EdlPacket.from_frame(frame, self.hmac).payload.values[0]
             t_recv = monotonic()
 
             # self.sent_times.keys() are monotonic (not to be confused with the timestamps from

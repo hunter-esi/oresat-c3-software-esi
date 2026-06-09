@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Optional
 
 from spacepackets.uslp import (
@@ -26,50 +25,8 @@ FECF_LEN = 2
 TC_MIN_LEN = PRIMARY_HEADER_LEN + DFH_LEN + FECF_LEN
 
 
-
 class UslpInvalidSpacecraftIdError(Exception):
     pass
-
-
-@dataclass
-class Gvcid:
-    """Global Virtual Channel Identifier
-
-    CCSDS 732.1-B
-    GVCID = TFVN + SCID + VCID
-
-    Parameters
-    ----------
-    tfvn: int
-        Transfer Frame Version Number. Must be 4 bits
-    scid: int
-        Spacecraft Identifier. Must be 16 bits
-    vcid: int
-        Virtual Channel Identifier. Must be 6 bits
-    """
-
-    tfvn: int  # 4 bits
-    scid: int  # 16 bits
-    vcid: int  # 6 bits
-
-    def __post_init__(self):
-        if not 0 <= self.tfvn <= 0xF:
-            raise ValueError(f"TFVN must be 4 bits, got {self.tfvn}")
-        if not 0 <= self.scid <= 0xFFFF:
-            raise ValueError(f"SCID must be 16 bits, got {self.scid}")
-        if not 0 <= self.vcid <= 0x3F:
-            raise ValueError(f"VCID must be 6 bits, got {self.vcid}")
-
-    def to_int(self) -> int:
-        return (self.tfvn << 22) | (self.scid << 6) | self.vcid
-
-    @classmethod
-    def from_int(cls, value: int) -> "Gvcid":
-        return cls(
-            tfvn=(value >> 22) & 0xF,
-            scid=(value >> 6) & 0xFFFF,
-            vcid=value & 0x3F,
-        )
 
 
 def unpack_frame(raw: bytes) -> TransferFrame:
@@ -100,12 +57,11 @@ def unpack_frame(raw: bytes) -> TransferFrame:
     # USLP Transfer Frame Validation
     # a) Must have expected TFVN: checked by TransferFrame.unpack
     # b) Must have expected MCID: checked below by also comparing SCID
-    # c) Header consistent with implemented features: covered by frame_props + unpack
+    # c) Header consistent with implemented features: covered by FRAME_PROPS + unpack
     # d) Consistent number of octets: length check short-circuit with TC_MIN_LEN
     #    Individual frame fields are check by unpack
     # e) Computed CRC matches FECF: CRC is checked by unpack
 
-    # gets the VCID so that we know how to unpack the frame
     vcid = ((raw[2] & 0b111) << 3) | ((raw[3] >> 5) & 0b111)
 
     frame_props = VarFrameProperties(
@@ -117,7 +73,7 @@ def unpack_frame(raw: bytes) -> TransferFrame:
 
     if len(raw) < TC_MIN_LEN:
         raise UslpInvalidRawPacketOrFrameLenError(f"Packet too short: {len(raw)}")
-    frame = TransferFrame.unpack(raw, FrameType.VARIABLE, frame_props)
+    frame = TransferFrame.unpack(raw, FrameType.VARIABLE, FRAME_PROPS)
     if frame.header.scid != SPACECRAFT_ID:
         raise UslpInvalidSpacecraftIdError
 
@@ -132,8 +88,9 @@ def make_frame(
     vcf_count: Optional[int] = None,
     control_word: Optional[bytes] = None,
     sequence_number: int = 0,
+    bypass: bool = False,
 ) -> TransferFrame:
-    """Create and pack a USLP Transfer Frame.
+    """Create and pack a USLP
 
     Parameters
     ----------
@@ -143,14 +100,16 @@ def make_frame(
         The Virtual Channel Identifier of the frame.
     src_dest
         The Source or Destination identifier.
+    hmac_key: bytes,
+        The key used to authenticate the message.
     vcf_count
         The Virtual Channel Frame count. If None, the VCF length is to 0 and no count is specified.
     control_word
         The CLCW, if any, to pack in the frame.
     sequence_number
         The anti-replay sequence number for SDLS.
-    hmac_key
-        The key used for SDLS
+    bypass
+        Specify if this frame is bypass (Type-BD) frame.
 
     Returns
     -------
@@ -158,23 +117,19 @@ def make_frame(
         The constructed Transfer Frame.
     """
 
-
-    # Steps:
-    # make the data field
-    # Pass the vcid, sequence number into SDLS to get the "insert zone" that is actually the SDLS header.
-    # get the length
-    #  Pass the vcid into SDLS to get the MAC length
-    # get the header
-    #  Pass the header, SDLS header, and data zone into SDLS. Plan is for this to be turned into the HMAC, or encrypt the data zone if thats a thing I can do.
-    # generate the frame
-
     tfdf = TransferFrameDataField(
         tfdz_cnstr_rules=TfdzConstructionRules.VpNoSegmentation,
-        uslp_ident=UslpProtocolIdentifier.SPACE_PACKETS_ENCAPSULATION_PACKETS, # Needs to be this, otherwise we would need to rewrite at least 1000 lines in YAMCS for 5 bits.
+        uslp_ident=UslpProtocolIdentifier.SPACE_PACKETS_ENCAPSULATION_PACKETS,
+        # Needs to be this, yamcs does not support user defined octet stream and this functions.
         tfdz=payload,
     )
 
-    has_clcw = bool(control_word)
+    # USLP transfer frame total length - 1
+    frame_len = len(payload) + PRIMARY_HEADER_LEN + DFH_LEN + FECF_LEN - 1
+
+    has_clcw = control_word is not None
+    if has_clcw:
+        frame_len += len(control_word)
 
     # USLP transfer frame total length - 1
     frame_len = len(payload) + PRIMARY_HEADER_LEN + DFH_LEN + FECF_LEN - 1
@@ -192,7 +147,11 @@ def make_frame(
         vcf_count=vcf_count,
         op_ctrl_flag=has_clcw,
         prot_ctrl_cmd_flag=ProtocolCommandFlag.USER_DATA,
-        bypass_seq_ctrl_flag=BypassSequenceControlFlag.SEQ_CTRLD_QOS,
+        bypass_seq_ctrl_flag=(
+            BypassSequenceControlFlag.EXPEDITED_QOS
+            if bypass
+            else BypassSequenceControlFlag.SEQ_CTRLD_QOS
+        ),
     )
 
     frame = TransferFrame(

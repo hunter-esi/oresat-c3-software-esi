@@ -4,7 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 from queue import Empty, SimpleQueue
 from time import time
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import canopen
 from cfdppy import CfdpState, PacketDestination, get_packet_destination
@@ -26,7 +26,13 @@ from cfdppy.user import (
     TransactionParams,
 )
 from olaf import MasterNode, NodeStop, Service, logger
-from spacepackets.cfdp import ChecksumType, ConditionCode, FaultHandlerCode, TransmissionMode
+from spacepackets.cfdp import (
+    ChecksumType,
+    ConditionCode,
+    FaultHandlerCode,
+    PduHolder,
+    TransmissionMode,
+)
 from spacepackets.cfdp.defs import DeliveryCode, FileStatus, TransactionId
 from spacepackets.cfdp.pdu import AbstractFileDirectiveBase
 from spacepackets.cfdp.tlv import (
@@ -39,13 +45,11 @@ from spacepackets.cfdp.tlv import (
 )
 from spacepackets.countdown import Countdown
 from spacepackets.seqcount import SeqCountProvider
-from spacepackets.uslp import SourceOrDestField, TransferFrame
-from spacepackets.uslp.frame import FrameType
+from spacepackets.uslp import TransferFrame
 from spacepackets.util import ByteFieldU8
 
 from ..protocols.cachestore import CacheStore
 from ..protocols.cfdp import FixedDestHandler, VfsSourceHandler
-from ..protocols.cop1.farm import FarmHigherServiceInterface
 from ..protocols.edl_command import (
     EdlCommandCode,
     EdlCommandError,
@@ -59,7 +63,6 @@ from ..subsystems.rtc import set_rtc_time, set_system_time_to_rtc_time
 from .beacon import BeaconService
 from .channel_router import ChannelRouterService
 from .node_manager import NodeManagerService
-from .radios import RadiosService
 
 
 class EdlService(Service):
@@ -68,21 +71,25 @@ class EdlService(Service):
     def __init__(
         self,
         node: MasterNode,
-        radios_service: RadiosService,
         node_mgr_service: NodeManagerService,
         beacon_service: BeaconService,
         channel_router_service: ChannelRouterService,
     ):
         super().__init__()
 
-        self._radios_service = radios_service
         self._node_mgr_service = node_mgr_service
         self._beacon_service = beacon_service
-        self._channel_router = channel_router_service
-        self._cmd_route: FarmHigherServiceInterface = channel_router_service.request_route(
-            EdlVcid.C3_COMMAND, cop=True
+        self._cmd_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(
+            EdlVcid.C3_COMMAND
         )
-        self._file_route: SimpleQueue[TransferFrame] = channel_router_service.request_route(
+        self._cmd_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
+            EdlVcid.C3_COMMAND,
+            use_cop=True,
+        )
+        self._file_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(
+            EdlVcid.FILE_TRANSFER
+        )
+        self._file_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
             EdlVcid.FILE_TRANSFER
         )
 
@@ -127,7 +134,7 @@ class EdlService(Service):
 
     def _frame_to_packet(self, frame: TransferFrame) -> Optional[EdlPacket]:
         try:
-            packet = EdlPacket.unpack(frame, self._hmac_key, not self._flight_mode)
+            packet = EdlPacket.from_frame(frame, self._hmac_key, not self._flight_mode)
         except (EdlPacketError, SdlsInvalidHmacError) as e:
             self._rejected_count += 1
             self._rejected_count &= 0xFF_FF_FF_FF
@@ -149,76 +156,63 @@ class EdlService(Service):
 
         return packet
 
-    def _respond(self, payload, control_word: Optional[bytes] = None) -> None:
+    def _respond(self, vcid: EdlVcid, payload: Union[PduHolder, EdlCommandResponse]) -> None:
         try:
             res_packet = EdlPacket(payload, self._sequence_count, SRC_DEST_UNICLOGS)
-            res_message = res_packet.pack(self._hmac_key, control_word)
+            res_message = res_packet.pack(self._hmac_key)
         except (EdlCommandError, EdlPacketError, ValueError) as e:
             logger.exception(f"EDL response generation raised: {e}")
             return
 
-        self._radios_service.send_edl_response(res_message)
+        if vcid == EdlVcid.C3_COMMAND:
+            self._cmd_downlink.put_nowait(res_message)
+        elif vcid == EdlVcid.FILE_TRANSFER:
+            self._file_downlink.put_nowait(res_message)
 
     def _process_command(self) -> None:
         try:
-            frame = self._cmd_route.buffer.pop()
-            self._cmd_route.buffer_release.set()
-        except IndexError:
+            frame = self._cmd_uplink.get_nowait()
+        except Empty:
             return
-        logger.info("processing cmd packet")
         req_packet = self._frame_to_packet(frame)
-        if req_packet is None:
-            self.sleep_ms(50)
-        else:
+        if req_packet is not None:
             try:
                 res_payload = self._run_cmd(req_packet.payload)
                 if not res_payload.values:
                     return  # no response
-                clcw = self._channel_router.get_control_word(EdlVcid.C3_COMMAND)
-                self._respond(res_payload, clcw.pack())
-            except Exception as e:
+                self._respond(EdlVcid.C3_COMMAND, res_payload)
+            except Exception as e:  # pylint: disable=W0718
                 logger.error(f"EDL command {req_packet.payload.code.name} raised: {e}")
 
     def _process_cfdp(self) -> None:
         try:
-            frame = self._file_route.get_nowait()
+            frame = self._file_uplink.get_nowait()
         except Empty:
-            return
-        req_packet = self._frame_to_packet(frame)
+            frame = None
+
+        if frame is not None:
+            req_packet = self._frame_to_packet(frame)
+        else:
+            req_packet = None
 
         if req_packet is None:
             if self._file_receiver.state == CfdpState.BUSY:
                 res_payload = self._file_receiver.loop(None)
             else:
-                self.sleep_ms(50)
                 return
         else:
             res_payload = self._file_receiver.loop(req_packet.payload)
 
         if res_payload is None:
-            self.sleep_ms(50)
             return
 
         for payload in res_payload:
-            self._respond(payload)
+            self._respond(EdlVcid.FILE_TRANSFER, payload)
 
     def on_loop(self):
         self._process_command()
         self._process_cfdp()
-        # FIXME: This should be temporary to promptly and consistently send CLCWs
-        #  The plan is to send CLCWs in a new VC "telemetry" (different than beacon).
-        #  There is no payload yet for this channel, it will only need CLCWs
-        self.sleep_ms(1500)
-        clcw = self._channel_router.get_control_word(EdlVcid.C3_COMMAND)
-        self._radios_service.send_edl_response(
-            make_frame(
-                b"\x00" * 4,
-                0,
-                SourceOrDestField.SOURCE,
-                control_word=clcw.pack(),
-				hmac_key=self._hmac_key
-            ).pack(FrameType.VARIABLE)
-        )
+        self.sleep_ms(50)
 
     def _run_cmd(self, request: EdlCommandRequest) -> EdlCommandResponse:
         ret: Any = None
