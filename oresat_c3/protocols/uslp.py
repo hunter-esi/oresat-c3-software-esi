@@ -73,7 +73,7 @@ def unpack_frame(raw: bytes) -> TransferFrame:
 
     if len(raw) < TC_MIN_LEN:
         raise UslpInvalidRawPacketOrFrameLenError(f"Packet too short: {len(raw)}")
-    frame = TransferFrame.unpack(raw, FrameType.VARIABLE, FRAME_PROPS)
+    frame = TransferFrame.unpack(raw, FrameType.VARIABLE, frame_props)
     if frame.header.scid != SPACECRAFT_ID:
         raise UslpInvalidSpacecraftIdError
 

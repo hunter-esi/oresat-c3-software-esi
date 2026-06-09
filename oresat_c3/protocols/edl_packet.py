@@ -2,8 +2,6 @@
 Anything dealing with packing and unpacking EDL (Engineering Data Link) packets.
 """
 
-import hashlib
-import hmac
 from enum import IntEnum
 from typing import Union
 
