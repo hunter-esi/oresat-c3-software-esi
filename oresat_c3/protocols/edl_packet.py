@@ -9,19 +9,8 @@ from typing import Union
 
 from spacepackets.cfdp.pdu import PduFactory
 from spacepackets.cfdp.pdu.file_directive import AbstractPduBase
-from spacepackets.uslp.frame import (  # type: ignore
-    FrameType,
-    TfdzConstructionRules,
-    TransferFrame,
-    TransferFrameDataField,
-    UslpProtocolIdentifier,
-)
-from spacepackets.uslp.header import (  # type: ignore
-    BypassSequenceControlFlag,
-    PrimaryHeader,
-    ProtocolCommandFlag,
-    SourceOrDestField,
-)
+from spacepackets.uslp.frame import FrameType, TransferFrame
+from spacepackets.uslp.header import SourceOrDestField
 
 from .edl_command import EdlCommandCode, EdlCommandError, EdlCommandRequest, EdlCommandResponse
 from .uslp import HMAC_LEN, SEQ_NUM_LEN, make_frame
