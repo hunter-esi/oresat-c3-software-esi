@@ -597,7 +597,6 @@ class Opd:
 
     @uart_node.setter
     def uart_node(self, name: Union[str, None]) -> None:
-
         self._uart_disconnect()
         if name is None or self._nodes[name].status == OpdNodeState.NOT_FOUND:
             return

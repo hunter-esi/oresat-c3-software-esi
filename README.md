@@ -20,12 +20,13 @@ Framework), which it built on top of [CANopen for Python] project. See the
 
 **For development**, install `oresat-configs` from the GitHub repo at
 https://github.com/oresat/oresat-configs (not from PyPI). That repo may have
-changes that are not apart of the latest release yet.
+changes that are not apart of the latest release yet. Cloning it and using
+`pip install --editable <path to your oresat-configs repo>` is very convenient.
 
 Install dependencies
 
 ```bash
-$ pip3 install -r requirements.txt
+$ pip3 install -e . --group dev
 ```
 
 Make a virtual CAN bus (skip if using a real CAN bus)
