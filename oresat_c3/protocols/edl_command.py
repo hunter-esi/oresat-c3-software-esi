@@ -307,7 +307,7 @@ def _edl_req_sdo_write_unpack_cb(raw: bytes) -> tuple:
     fmt = "<BHBI"
     size = struct.calcsize(fmt)
     values = struct.unpack(fmt, raw[:size])
-    return values + (raw[size:],)
+    return (values, raw[size:])
 
 
 def _edl_res_sdo_read_pack_cb(values: tuple) -> bytes:
@@ -427,7 +427,7 @@ class EdlCommandRequest:
         elif command.req_unpack_func is not None:
             args = command.req_unpack_func(raw[1:])
         else:
-            args = tuple()
+            args = ()
 
         return EdlCommandRequest(code, args)
 
@@ -494,6 +494,6 @@ class EdlCommandResponse:
         elif command.res_unpack_func is not None:
             values = command.res_unpack_func(raw[1:])
         else:
-            values = tuple()
+            values = ()
 
         return EdlCommandResponse(code, values)

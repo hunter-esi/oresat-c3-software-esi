@@ -39,7 +39,7 @@ class ChannelRouterService(Service):
                 try:
                     msg = dl.get_nowait()
                     self._radios_service.send_edl_response(msg)
-                except Empty:
+                except Empty:  # noqa: PERF203
                     break
 
         now = monotonic()

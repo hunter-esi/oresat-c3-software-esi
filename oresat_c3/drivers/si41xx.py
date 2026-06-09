@@ -261,6 +261,10 @@ class Si41xx:
 
         self._state = Si41xxState.STOP
 
+    def aux(self) -> bool:
+        """Returns the state of the auxout pin"""
+        return bool(self._auxout_gpio.get_value(self._auxout_gpio.offsets[0]))
+
     def _set_config_reg(
         self,
         rfpwr: bool,
