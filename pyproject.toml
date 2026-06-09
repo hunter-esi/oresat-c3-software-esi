@@ -22,6 +22,7 @@ dependencies = [
     "bitstring",
     "cfdp-py~=0.6.0",
     "dataclasses-json",
+    "gpiod",
     "fastcrc~=0.3",
     "oresat-configs>=1.1.1",
     "oresat-olaf>=3.7.1",

@@ -144,7 +144,7 @@ class NodeManagerService(Service):
                 return NodeState.ON
             return NodeState.DEAD
 
-        if co.info.processor == "stm32":
+        if co.info.processor in ("stm32", "mcxn"):
             timeout = self._STM32_BOOT_TIMEOUT
         else:
             timeout = self._OCTAVO_BOOT_TIMEOUT
