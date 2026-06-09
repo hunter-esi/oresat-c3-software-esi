@@ -28,6 +28,7 @@ class CopManagerService(Service):
     def on_loop(self) -> None:
         self._process_farm_higher()
         self._process_farm_lower()
+        self.sleep_ms(50)
 
     def _process_farm_lower(self) -> None:
         try:
