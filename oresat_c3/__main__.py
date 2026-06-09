@@ -114,12 +114,13 @@ def watchdog():
 
         updating = app.od["updater"]["status"].value == UpdaterState.UPDATING
         edl = app.od["status"].value == C3State.EDL
+        override = app.od["performance_override"].value
 
-        if not performance and (updating or edl):
+        if not performance and (updating or edl or override):
             logger.info("setting cpufreq governor to performance mode")
             set_cpufreq_gov("performance")
             performance = True
-        elif performance and not updating and not edl:
+        elif performance and not (updating or edl or override):
             logger.info("setting cpufreq governor to powersave mode")
             set_cpufreq_gov("powersave")
             performance = False
