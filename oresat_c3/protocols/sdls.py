@@ -1,9 +1,7 @@
 import hashlib
 import hmac
 
-from spacepackets.uslp import (
-    TransferFrame,
-)
+from spacepackets.uslp import TransferFrame
 
 
 HMAC_LEN = 32
@@ -74,7 +72,9 @@ class SdlsOresat(SdlsEmpty):
         frame.tfdf.tfdz = frame.tfdf.tfdz[:-HMAC_LEN] # strip the hmac from the transfer frame.
 
         if not hmac.compare_digest(hmac_expected, hmac_actual):
-            raise SdlsInvalidHmacError(f"Frame with invalid HMAC received expected: {hmac_expected}, Actual: {hmac_actual}")
+            raise SdlsInvalidHmacError(
+                f"Frame with invalid HMAC received expected: {hmac_expected}, Actual: {hmac_actual}"
+            )
 
         sequence_number = int.from_bytes(sdls_header[2:], byteorder="little")
         return sequence_number
@@ -97,7 +97,7 @@ def get_sdls_len(vcid: int) -> int:
     int
         The length of the sdls header and trailer.
     """
-    
+
     try:
         return SPI_LIST[vcid].len()
     except IndexError as e:
@@ -125,7 +125,8 @@ def get_sdls_header_len(vcid: int) -> int:
 
 def apply_sdls(frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
     """
-    Apply the HMAC to the data zone (out of spec but no other choice) and return the header to be put in the insert zone (see previous note.)
+    Apply the HMAC to the data zone (out of spec but no other choice) and return the header to be
+    put in the insert zone (see previous note.)
 
     Parameters
     ----------
@@ -148,16 +149,16 @@ def apply_sdls(frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
 
 def verify_sdls(frame: TransferFrame, hmac_key: bytes) -> int:
     """
-    Check that the HMAC is good, then return the sequence number. Sequence number handling should be handled here, but I do not
-    have time to disentangle it now. TODO: fix.
+    Check that the HMAC is good, then return the sequence number. Sequence number handling should
+    be handled here, but I do not have time to disentangle it now. TODO: fix.
 
     Parameters
     ----------
     frame
         The transfer frame as a TransferFrame object
     hmac_key
-        The contents of the transfer frame. As the spacepackets protocol does not support sdls, the MAC will be inserted into the 
-        data zone, despite spec stating that this is not the case.
+        The contents of the transfer frame. As the spacepackets protocol does not support sdls, the
+        MAC will be inserted into the data zone, despite spec stating that this is not the case.
 
     Returns
     -------

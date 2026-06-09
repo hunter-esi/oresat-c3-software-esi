@@ -11,8 +11,8 @@ from oresat_c3.protocols.edl_packet import (
     SRC_DEST_UNICLOGS,
     EdlPacket,
 )
-from oresat_c3.protocols.uslp import TC_MIN_LEN, unpack_frame
 from oresat_c3.protocols.sdls import SdlsInvalidHmacError
+from oresat_c3.protocols.uslp import TC_MIN_LEN, unpack_frame
 
 
 class TestEdlPacket(unittest.TestCase):

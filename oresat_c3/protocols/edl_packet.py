@@ -11,8 +11,8 @@ from spacepackets.uslp.frame import FrameType, TransferFrame
 from spacepackets.uslp.header import SourceOrDestField
 
 from .edl_command import EdlCommandCode, EdlCommandError, EdlCommandRequest, EdlCommandResponse
-from .uslp import make_frame
 from .sdls import verify_sdls
+from .uslp import make_frame
 
 SRC_DEST_ORESAT = SourceOrDestField.DEST
 SRC_DEST_UNICLOGS = SourceOrDestField.SOURCE
