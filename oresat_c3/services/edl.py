@@ -1,27 +1,21 @@
 """'EDL Service"""
 
-from collections.abc import Iterable
 from datetime import timedelta
 from pathlib import Path
 from queue import Empty, SimpleQueue
 from time import time
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import canopen
 from cfdppy import CfdpState, PacketDestination, get_packet_destination
-from cfdppy.exceptions import (
-    FsmNotCalledAfterPacketInsertion,
-    NoRemoteEntityCfgFound,
-    SourceFileDoesNotExist,
-    UnretrievedPdusToBeSent,
-)
+from cfdppy.exceptions import NoRemoteEntityConfigFound, SourceFileDoesNotExist
 from cfdppy.mib import (
     CheckTimerProvider,
     DefaultFaultHandlerBase,
-    IndicationCfg,
-    LocalEntityCfg,
-    RemoteEntityCfg,
-    RemoteEntityCfgTable,
+    IndicationConfig,
+    LocalEntityConfig,
+    RemoteEntityConfig,
+    RemoteEntityConfigTable,
 )
 from cfdppy.request import PutRequest
 from cfdppy.user import (
@@ -29,12 +23,17 @@ from cfdppy.user import (
     FileSegmentRecvdParams,
     MetadataRecvParams,
     TransactionFinishedParams,
-    TransactionId,
     TransactionParams,
 )
 from olaf import MasterNode, NodeStop, Service, logger
-from spacepackets.cfdp import ChecksumType, ConditionCode, FaultHandlerCode, TransmissionMode
-from spacepackets.cfdp.defs import DeliveryCode, FileStatus
+from spacepackets.cfdp import (
+    ChecksumType,
+    ConditionCode,
+    FaultHandlerCode,
+    PduHolder,
+    TransmissionMode,
+)
+from spacepackets.cfdp.defs import DeliveryCode, FileStatus, TransactionId
 from spacepackets.cfdp.pdu import AbstractFileDirectiveBase
 from spacepackets.cfdp.tlv import (
     DirectoryListingResponse,
@@ -46,10 +45,11 @@ from spacepackets.cfdp.tlv import (
 )
 from spacepackets.countdown import Countdown
 from spacepackets.seqcount import SeqCountProvider
+from spacepackets.uslp import TransferFrame
 from spacepackets.util import ByteFieldU8
 
 from ..protocols.cachestore import CacheStore
-from ..protocols.cfdp import FixedDestHandler, VfsCrcHelper, VfsSourceHandler
+from ..protocols.cfdp import FixedDestHandler, VfsSourceHandler
 from ..protocols.edl_command import (
     EdlCommandCode,
     EdlCommandError,
@@ -59,8 +59,8 @@ from ..protocols.edl_command import (
 from ..protocols.edl_packet import SRC_DEST_UNICLOGS, EdlPacket, EdlPacketError, EdlVcid
 from ..subsystems.rtc import set_rtc_time, set_system_time_to_rtc_time
 from .beacon import BeaconService
+from .channel_router import ChannelRouterService
 from .node_manager import NodeManagerService
-from .radios import RadiosService
 
 
 class EdlService(Service):
@@ -69,15 +69,27 @@ class EdlService(Service):
     def __init__(
         self,
         node: MasterNode,
-        radios_service: RadiosService,
         node_mgr_service: NodeManagerService,
         beacon_service: BeaconService,
+        channel_router_service: ChannelRouterService,
     ):
         super().__init__()
 
-        self._radios_service = radios_service
         self._node_mgr_service = node_mgr_service
         self._beacon_service = beacon_service
+        self._cmd_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(
+            EdlVcid.C3_COMMAND
+        )
+        self._cmd_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
+            EdlVcid.C3_COMMAND,
+            use_cop=True,
+        )
+        self._file_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(
+            EdlVcid.FILE_TRANSFER
+        )
+        self._file_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
+            EdlVcid.FILE_TRANSFER
+        )
 
         self._file_receiver = EdlFileReciever(node.fwrite_cache)
 
@@ -118,14 +130,9 @@ class EdlService(Service):
     def _rejected_count(self, value):
         self._edl_rejected_count_obj.value = value
 
-    def _upack_last_recv(self) -> Optional[EdlPacket]:
+    def _frame_to_packet(self, frame: TransferFrame) -> Optional[EdlPacket]:
         try:
-            message = self._radios_service.recv_queue.get_nowait()
-        except Empty:
-            return None
-
-        try:
-            packet = EdlPacket.unpack(message, self._hmac_key, not self._flight_mode)
+            packet = EdlPacket.from_frame(frame, self._hmac_key, not self._flight_mode)
         except EdlPacketError as e:
             self._rejected_count += 1
             self._rejected_count &= 0xFF_FF_FF_FF
@@ -147,44 +154,63 @@ class EdlService(Service):
 
         return packet
 
-    def on_loop(self):
-        req_packet = self._upack_last_recv()
+    def _respond(self, vcid: EdlVcid, payload: Union[PduHolder, EdlCommandResponse]) -> None:
+        try:
+            res_packet = EdlPacket(payload, self._sequence_count, SRC_DEST_UNICLOGS)
+            res_message = res_packet.pack(self._hmac_key)
+        except (EdlCommandError, EdlPacketError, ValueError) as e:
+            logger.exception(f"EDL response generation raised: {e}")
+            return
+
+        if vcid == EdlVcid.C3_COMMAND:
+            self._cmd_downlink.put_nowait(res_message)
+        elif vcid == EdlVcid.FILE_TRANSFER:
+            self._file_downlink.put_nowait(res_message)
+
+    def _process_command(self) -> None:
+        try:
+            frame = self._cmd_uplink.get_nowait()
+        except Empty:
+            return
+        req_packet = self._frame_to_packet(frame)
+        if req_packet is not None:
+            try:
+                res_payload = self._run_cmd(req_packet.payload)
+                if not res_payload.values:
+                    return  # no response
+                self._respond(EdlVcid.C3_COMMAND, res_payload)
+            except Exception as e:  # pylint: disable=W0718
+                logger.error(f"EDL command {req_packet.payload.code.name} raised: {e}")
+
+    def _process_cfdp(self) -> None:
+        try:
+            frame = self._file_uplink.get_nowait()
+        except Empty:
+            frame = None
+
+        if frame is not None:
+            req_packet = self._frame_to_packet(frame)
+        else:
+            req_packet = None
 
         if req_packet is None:
             if self._file_receiver.state == CfdpState.BUSY:
                 res_payload = self._file_receiver.loop(None)
             else:
-                self.sleep_ms(50)
                 return
-        elif req_packet.vcid == EdlVcid.C3_COMMAND:
-            try:
-                res_payload = self._run_cmd(req_packet.payload)
-                if not res_payload.values:
-                    return  # no response
-            except Exception as e:  # pylint: disable=W0718
-                logger.error(f"EDL command {req_packet.payload.code.name} raised: {e}")
-                return
-        elif req_packet.vcid == EdlVcid.FILE_TRANSFER:
-            res_payload = self._file_receiver.loop(req_packet.payload)
         else:
-            logger.error(f"got an EDL packet with unknown VCID: {req_packet.vcid}")
-            return
+            res_payload = self._file_receiver.loop(req_packet.payload)
 
         if res_payload is None:
-            self.sleep_ms(50)
             return
 
-        if not isinstance(res_payload, Iterable):
-            res_payload = (res_payload,)
         for payload in res_payload:
-            try:
-                res_packet = EdlPacket(payload, self._sequence_count, SRC_DEST_UNICLOGS)
-                res_message = res_packet.pack(self._hmac_key)
-            except (EdlCommandError, EdlPacketError, ValueError) as e:
-                logger.exception(f"EDL response generation raised: {e}")
-                continue
+            self._respond(EdlVcid.FILE_TRANSFER, payload)
 
-            self._radios_service.send_edl_response(res_message)
+    def on_loop(self):
+        self._process_command()
+        self._process_cfdp()
+        self.sleep_ms(50)
 
     def _run_cmd(self, request: EdlCommandRequest) -> EdlCommandResponse:
         ret: Any = None
@@ -408,15 +434,15 @@ class EdlFileReciever(CfdpUserBase):
             ConditionCode.POSITIVE_ACK_LIMIT_REACHED, FaultHandlerCode.ABANDON_TRANSACTION
         )
 
-        localcfg = LocalEntityCfg(
+        localcfg = LocalEntityConfig(
             local_entity_id=DEST_ID,
-            indication_cfg=IndicationCfg(),
+            indication_cfg=IndicationConfig(),
             default_fault_handlers=fault_handler,
         )
 
-        remote_entities = RemoteEntityCfgTable(
+        remote_entities = RemoteEntityConfigTable(
             [
-                RemoteEntityCfg(
+                RemoteEntityConfig(
                     entity_id=SOURCE_ID,
                     max_file_segment_len=None,
                     # FIXME this value should come from EdlPacket but EdlPacket does not define it.
@@ -437,7 +463,6 @@ class EdlFileReciever(CfdpUserBase):
             remote_cfg_table=remote_entities,
             check_timer_provider=DefaultCheckTimer(),
         )
-        self.dest._cksum_verif_helper = VfsCrcHelper(ChecksumType.NULL_CHECKSUM, self.vfs)
 
         self.source = VfsSourceHandler(
             cfg=localcfg,
@@ -446,7 +471,6 @@ class EdlFileReciever(CfdpUserBase):
             check_timer_provider=DefaultCheckTimer(),
             seq_num_provider=SeqCountProvider(16),
         )
-        self.source._crc_helper = VfsCrcHelper(ChecksumType.NULL_CHECKSUM, self.vfs)
 
         self.scheduled_requests: SimpleQueue[PutRequest] = SimpleQueue()
         self.active_requests: dict[TransactionId, TransactionId] = {}
@@ -475,23 +499,24 @@ class EdlFileReciever(CfdpUserBase):
         # Timers only expire when .state_machine() is called, and .state_machine() must
         # be called after all the packets have been drained, or after inserting a new
         # pdu.
+        tick_dest = True
+        tick_src = True
         if pdu:
             logger.info(f"<--- {pdu}")
 
             if get_packet_destination(pdu) == PacketDestination.DEST_HANDLER:
                 try:
-                    self.dest.insert_packet(pdu)
-                except Exception:
-                    # Usually this exception means the library is being used wrong, so we have
-                    # to be careful here. However there is a bug in the presence of dropped packets
-                    # where dest._params.last_inserted_packet does not get cleared.
-                    logger.exception("dest.state_machine() didn't properly clear inserted packet")
+                    self.dest.state_machine(pdu)
+                    tick_dest = False
+                except Exception as e:
+                    logger.exception(f"CFDP raised: {e}")
                     self.dest.reset()
             else:
                 try:
-                    self.source.insert_packet(pdu)
-                except Exception:
-                    logger.exception("source.state_machine() didn't properly clear inserted packet")
+                    self.source.state_machine(pdu)
+                    tick_src = False
+                except Exception as e:
+                    logger.exception(f"CFDP raised: {e}")
                     self.source.reset()
 
         if self.dest.state == CfdpState.IDLE and self.source.state == CfdpState.IDLE:
@@ -502,8 +527,8 @@ class EdlFileReciever(CfdpUserBase):
             else:
                 try:
                     self.source.put_request(request)
-                except (SourceFileDoesNotExist, NoRemoteEntityCfgFound):
-                    # Note that NoRemoteEntityCfgFound indicates that the MIB is missing info on
+                except (SourceFileDoesNotExist, NoRemoteEntityConfigFound):
+                    # Note that NoRemoteEntityConfigFound indicates that the MIB is missing info on
                     # the requested proxy transfer destination. CFDP doesn't seem to have a
                     # standard set of errors that cover this condition, and the least worst option
                     # resulted in an identical message to missing_file. Not super great, so if
@@ -511,13 +536,14 @@ class EdlFileReciever(CfdpUserBase):
                     self.scheduled_requests.put(self.missing_file_response(request))
 
         try:
-            self.dest.state_machine()
-            self.source.state_machine()
-        except Exception:
-            logger.exception("state_machine failed to update")
+            if tick_dest:
+                self.dest.state_machine()
+            if tick_src:
+                self.source.state_machine()
+        except Exception as e:
+            logger.exception(f"Failed to update state machine: {e}")
             self.dest.reset()
             self.source.reset()
-
         pdus = []
         while self.dest.packets_ready:
             pdus.append(self.dest.get_next_packet().pdu)

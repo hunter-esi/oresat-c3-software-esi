@@ -1,6 +1,6 @@
 """C3 OLAF App."""
 
-from enum import Enum, IntEnum
+from enum import IntEnum
 
 try:
     from ._version import version as __version__  # type: ignore

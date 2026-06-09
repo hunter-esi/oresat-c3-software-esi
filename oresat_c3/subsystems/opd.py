@@ -450,13 +450,13 @@ class Opd:
 
         Parameters
         ----------
-        not_enable_pin : str
+        not_enable_pin: str
             Output pin that enables/disables the OPD subsystem.
-        not_fault_pin : str
+        not_fault_pin: str
             Input pin for faults.
-        current_pin : int
+        current_pin: int
             ADC pin number to get OPD current.
-        mock : bool
+        mock: bool
             Mock the OPD subsystem.
         """
 
@@ -472,9 +472,9 @@ class Opd:
         self._adc = Adc(self._ADC_CURRENT_PIN, mock)
 
         self._nodes: dict[str, OpdNode] = {}
+        self._status = OpdState.DISABLED
         self._uart_node: Optional[str] = None
         self._resets = 0
-        self._status = OpdState.DISABLED
 
     def __getitem__(self, name: str) -> OpdNode:
         return self._nodes[name]
@@ -483,6 +483,7 @@ class Opd:
         opd_type = {
             "none": OpdNode,
             "stm32": OpdStm32Node,
+            "mcxn": OpdStm32Node,
             "octavo": OpdOctavoNode,
         }
 
@@ -529,9 +530,9 @@ class Opd:
 
         Parameters
         ----------
-        tries : int
+        tries: int
             Number of tries in a row to try to reset the OPD subsystem.
-        disable_delay : float
+        disable_delay: float
             Number of seconds betwen try to disabling and enabling the subsystem to reset it.
         """
 
@@ -559,12 +560,12 @@ class Opd:
 
         Parameters
         ----------
-        reset : bool
+        reset: bool
             Optional flag to reset any node that is found.
 
         Returns
         -------
-        int : The number of nodes found.
+        int: The number of nodes found.
         """
 
         count = 0
@@ -611,7 +612,7 @@ class Opd:
 
     @property
     def uart_node(self) -> Optional[str]:
-        """str : The selected UART node name or an empty string for no node."""
+        """str: The selected UART node name or an empty string for no node."""
         if (
             self._uart_node is not None
             and self._nodes[self._uart_node].status == OpdNodeState.NOT_FOUND

@@ -2,6 +2,8 @@
 SI41xx RF Synthesizer driver.
 """
 
+from __future__ import annotations
+
 import math
 from enum import IntEnum
 
@@ -133,8 +135,8 @@ class Si41xx:
 
         Notes
         -----
-        While there is no official standard for SPI, Motorola (now NXP) AN991 serves as a de facto standard [1]_.
-        The Si41xx serial interface differs slightly from the informal standard [2]_.
+        While there is no official standard for SPI, Motorola (now NXP) AN991 serves as a de facto
+        standard [1]_. The Si41xx serial interface differs slightly from the informal standard [2]_.
 
         SEN <=> Slave Select or Chip Select (SS, CS)
         SDATA <=> Master Out Slave In (MOSI)

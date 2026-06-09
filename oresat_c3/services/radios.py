@@ -1,7 +1,7 @@
 """
 Radios Service
 
-Handles interfacing with the radio driver app.
+Handles interfacing with the radio driver daemon.
 """
 
 import socket
@@ -11,6 +11,7 @@ from queue import SimpleQueue
 from gpiod.line import Value
 from olaf import Service, logger
 
+from .. import C3State
 from ..drivers.si41xx import Si41xx, Si41xxIfdiv
 from ..subsystems._gpio import request_gpio_input, request_gpio_output
 
@@ -35,6 +36,7 @@ class RadiosService(Service):
         super().__init__()
 
         self._mock_hw = mock_hw
+        self.enable_uhf = False
         if mock_hw:
             self.uhf = Radio()
             self.lband = Radio()
@@ -98,12 +100,13 @@ class RadiosService(Service):
 
         if recv := self._recv_edl_request():
             self.recv_queue.put(recv)
+        if self.uhf and not self.node.od["status"].value == C3State.EDL:
+            self.uhf_off()
 
     def on_stop(self):
         """Power down radios and stop daemons."""
         logger.info("disabling radios")
         if not self._mock_hw:
-            self.node.daemons["uhf"].stop()
             self.node.daemons["lband"].stop()
 
         self._beacon_downlink_socket.close()
@@ -121,6 +124,19 @@ class RadiosService(Service):
         if not self._mock_hw:
             self._radio_enable_gpio.set_value(self._radio_enable_gpio.offsets[0], Value.INACTIVE)
 
+    def uhf_on(self):
+        self.enable_uhf = True
+        self.uhf.enable()
+        if "uhf" in self.node.daemons:
+            self.node.daemons["uhf"].start()
+
+    def uhf_off(self):
+        self.sleep_ms(100)
+        if "uhf" in self.node.daemons:
+            self.node.daemons["uhf"].stop()
+        self.uhf.disable()
+        self.enable_uhf = False
+
     def send_edl_response(self, message: bytes):
         """
         Send an EDL packet.
@@ -130,6 +146,8 @@ class RadiosService(Service):
         message : bytes
             The message to send as a byte string.
         """
+        if not self.enable_uhf:
+            self.uhf_on()
         try:
             self._edl_downlink_socket.sendto(message, self.EDL_DOWNLINK_ADDR)
         except Exception as e:  # pylint: disable=W0718
@@ -146,12 +164,14 @@ class RadiosService(Service):
         message : bytes
             The beacon to beacon.
         """
+        self.uhf_on()
         try:
             self._beacon_downlink_socket.sendto(message, self.BEACON_DOWNLINK_ADDR)
         except Exception as e:  # pylint: disable=W0718
             logger.error(f"failed to send beacon message: {e}")
 
         logger.debug(f"Sent beacon downlink packet: {message.hex(sep=' ')}")
+        self.uhf_off()
 
     def _recv_edl_request(self) -> bytes:
         """

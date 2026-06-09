@@ -6,14 +6,14 @@ This handles the main C3 state machine and saving state.
 
 import os
 import subprocess
-import time
+from time import monotonic, time
 
 import canopen
 from olaf import NodeStop, Service, UpdaterState, logger
 
 from .. import C3State
 from ..drivers.fm24cl64b import Fm24cl64b
-from ..subsystems.antennas import Helical, MockAntenna, Monopole
+from ..subsystems.antennas import AntennasC3v6, AntennasC3v7
 from ..subsystems.rtc import set_rtc_time
 
 
@@ -26,21 +26,15 @@ class StateService(Service):
 
     def __init__(self, fram_objs: list, mock_hw: bool = False):
         super().__init__()
-
-        if mock_hw:
-            self._monopole = MockAntenna()
-            self._helical = MockAntenna()
-        else:
-            self._monopole = Monopole()
-            self._helical = Helical()
-
+        self._mock_hw = mock_hw
         self._fram_objs = fram_objs
         self._fram = Fm24cl64b(self.I2C_BUS_NUM, self.FRAM_I2C_ADDR, mock_hw)
+
         self._attempts = 0
         self._loops = 0
         self._last_state = C3State.OFFLINE
         self._last_antennas_deploy = 0
-        self._start_time = time.monotonic()
+        self._start_time = monotonic()
 
         self._c3_state_obj: canopen.objectdictionary.Variable = None
         self._reset_timeout_obj: canopen.objectdictionary.Variable = None
@@ -80,6 +74,11 @@ class StateService(Service):
         self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
         self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
 
+        if self.node.od["versions"]["hw_version"].value.startswith("6"):
+            self._antennas = AntennasC3v6(self._mock_hw)
+        else:
+            self._antennas = AntennasC3v7(self._mock_hw)
+
         self.restore_state()
         if not self._tx_enable_obj.value:
             self._last_tx_enable_obj.value = 0
@@ -95,7 +94,7 @@ class StateService(Service):
         self._last_state = self._c3_state_obj.value
         logger.info(f"C3 initial state: {C3State(self._last_state).name}")
 
-        self._start_time = time.monotonic()
+        self._start_time = monotonic()
 
     def on_stop(self):
         self.store_state()
@@ -106,7 +105,7 @@ class StateService(Service):
         self._tx_enable_obj.value = data
         if data:
             logger.info("enabling tx")
-            self._last_tx_enable_obj.value = int(time.time())
+            self._last_tx_enable_obj.value = int(time())
         else:
             logger.info("disabling tx")
             self._last_tx_enable_obj.value = 0
@@ -119,7 +118,6 @@ class StateService(Service):
 
         result = subprocess.run(
             ["systemctl", "stop", "oresat-c3-watchdog"],
-            shell=True,
             check=False,
             capture_output=True,
         )
@@ -131,10 +129,10 @@ class StateService(Service):
     def _pre_deploy(self):
         """PRE_DEPLOY state method."""
 
-        if (time.monotonic() - self._start_time) < self._pre_deploy_timeout_obj.value:
+        if (monotonic() - self._start_time) < self._pre_deploy_timeout_obj.value:
             if not self._tx_enable_obj.value:
                 self._tx_enable_obj.value = True  # start beacons
-                self._last_tx_enable_obj.value = int(time.time())
+                self._last_tx_enable_obj.value = int(time())
         else:
             logger.info("pre-deploy timeout reached")
             self._c3_state_obj.value = C3State.DEPLOY.value
@@ -144,15 +142,15 @@ class StateService(Service):
 
         if not self._deployed_obj.value and self._attempts < self._attempts_obj.value:
             if (
-                time.monotonic()
-                > (self._last_antennas_deploy + self._ant_reattempt_timeout_obj.value)
+                monotonic() > (self._last_antennas_deploy + self._ant_reattempt_timeout_obj.value)
                 and self.is_bat_lvl_good
             ):
                 logger.info(f"deploying antennas, attempt {self._attempts + 1}")
-                self._helical.deploy(self._ant_attempt_timeout_obj.value)
-                time.sleep(self._ant_attempt_between_timeout_obj.value)
-                self._monopole.deploy(self._ant_attempt_timeout_obj.value)
-                self._last_antennas_deploy = time.monotonic()
+                self._antennas.deploy(
+                    self._ant_attempt_timeout_obj.value,
+                    self._ant_attempt_between_timeout_obj.value,
+                )
+                self._last_antennas_deploy = monotonic()
                 self._attempts += 1
             # wait for battery to be at a good level
         else:
@@ -237,13 +235,13 @@ class StateService(Service):
     def has_tx_timed_out(self) -> bool:
         """bool: Helper property to check if the tx timeout has been reached."""
 
-        return (time.time() - self._last_tx_enable_obj.value) > self._tx_timeout_obj.value
+        return (time() - self._last_tx_enable_obj.value) > self._tx_timeout_obj.value
 
     @property
     def has_edl_timed_out(self) -> bool:
         """bool: Helper property to check if the edl timeout has been reached."""
 
-        return (time.time() - self._last_edl_obj.value) < self._edl_timeout_obj.value
+        return (time() - self._last_edl_obj.value) < self._edl_timeout_obj.value
 
     @property
     def is_bat_lvl_good(self) -> bool:
@@ -261,7 +259,7 @@ class StateService(Service):
         if os.geteuid() != 0 or not self.node.od["flight_mode"].value:
             return False
 
-        return (time.monotonic() - self._start_time) > self._reset_timeout_obj.value
+        return (monotonic() - self._start_time) > self._reset_timeout_obj.value
 
     def store_state(self):
         """Store the state in F-RAM."""
