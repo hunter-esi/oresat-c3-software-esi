@@ -92,5 +92,5 @@ class TestEdlPacket(unittest.TestCase):
         req = edl_packet_req.pack(self.hmac_key)
 
         frame = unpack_frame(req)
-        with self.assertRaises(EdlPacketError):
+        with self.assertRaises(ValueError):
             EdlPacket.from_frame(frame, self.hmac_key)

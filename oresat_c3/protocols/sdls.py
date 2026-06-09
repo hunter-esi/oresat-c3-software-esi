@@ -2,8 +2,6 @@ import hashlib
 import hmac
 
 from spacepackets.uslp import (
-    PrimaryHeader,
-    TransferFrameDataField,
     TransferFrame,
 )
 
@@ -146,7 +144,7 @@ def apply_sdls(frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
     try:
         return SPI_LIST[frame.header.vcid].apply(frame, seq_num, hmac_key)
     except IndexError as e:
-        raise ValueError(f"VCID {vcid} does not have corresponding SPI.") from e
+        raise ValueError(f"VCID {frame.header.vcid} does not have corresponding SPI.") from e
 
 def verify_sdls(frame: TransferFrame, hmac_key: bytes) -> int:
     """
@@ -170,4 +168,4 @@ def verify_sdls(frame: TransferFrame, hmac_key: bytes) -> int:
     try:
         return SPI_LIST[frame.header.vcid].verify(frame, hmac_key)
     except IndexError as e:
-        raise ValueError(f"VCID {vcid} does not have corresponding SPI.") from e
+        raise ValueError(f"VCID {frame.header.vcid} does not have corresponding SPI.") from e
