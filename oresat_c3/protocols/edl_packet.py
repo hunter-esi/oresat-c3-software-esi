@@ -98,7 +98,7 @@ class EdlPacket:
             raise EdlPacketError(e) from e
 
         frame = make_frame(
-            payload=tfdz,
+            payload=payload_raw,
             vcid=self.vcid.value,
             src_dest=self.src_dest,
             sequence_number=self.seq_num,
