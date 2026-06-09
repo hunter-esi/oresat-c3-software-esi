@@ -13,7 +13,7 @@ from olaf import Service, logger
 
 from .. import C3State
 from ..drivers.si41xx import Si41xx, Si41xxIfdiv
-from ..subsystems._gpio import request_gpio_input, request_gpio_output
+from ..subsystems._gpio import request_gpio_output
 
 
 class RadiosService(Service):
@@ -44,8 +44,6 @@ class RadiosService(Service):
             self._radio_enable_gpio = request_gpio_output("/dev/gpiochip1", 22, "RADIO_ENABLE")
             self.uhf = UHFRadio()
             self.lband = LBandRadio()
-            self.node.add_daemon("lband")
-            self.node.add_daemon("uhf")
 
         self.recv_queue: SimpleQueue[bytes] = SimpleQueue()
 
@@ -55,6 +53,8 @@ class RadiosService(Service):
         if not self._mock_hw:
             self._radio_enable_gpio.set_value(self._radio_enable_gpio.offsets[0], Value.ACTIVE)
             time.sleep(0.1)
+        self.node.add_daemon("lband")
+        self.node.add_daemon("uhf")
 
         logger.info("enabling uhf radio")
         self.uhf.enable()
@@ -206,7 +206,7 @@ class Radio:
         return True
 
     def rf_reset(self):
-        self.rf_reset_count += 1
+        self._rf_reset_count += 1
 
     @property
     def rf_reset_count(self):
@@ -238,7 +238,6 @@ class LBandRadio(Radio):
         )
 
         # request gpio pins
-        self._si41xx_nlock_gpio = request_gpio_input("/dev/gpiochip3", 29, "LBAND_LO_nLOCKED")
         self._lband_enable_gpio = request_gpio_output("/dev/gpiochip0", 19, "LBAND_ENABLE")
 
     def enable(self):
@@ -269,7 +268,7 @@ class LBandRadio(Radio):
             True if the L-band is locked.
         """
         # si41xx_nlock is active low
-        return not bool(self._si41xx_nlock_gpio.get_value(self._si41xx_nlock_gpio.offsets[0]))
+        return not self._si41xx.aux()
 
     def rf_reset(self):
         """Reset the L-band synth."""
