@@ -65,11 +65,13 @@ def unpack_frame(raw: bytes) -> TransferFrame:
 
     vcid = ((raw[2] & 0b111) << 3) | ((raw[3] >> 5) & 0b111)
 
+    sdls_header_len = get_sdls_header_len(vcid)
+
     frame_props = VarFrameProperties(
-        has_insert_zone=True,
+        has_insert_zone=sdls_header_len != 0,
         has_fecf=True,
         truncated_frame_len=0,
-        insert_zone_len=get_sdls_header_len(vcid),
+        insert_zone_len=sdls_header_len,
     )
 
     if len(raw) < TC_MIN_LEN:
@@ -85,7 +87,7 @@ def make_frame(
     payload: bytes,
     vcid: int,
     src_dest: SourceOrDestField,
-    hmac_key: bytes,
+    hmac_key: Optional[bytes] = None,
     vcf_count: Optional[int] = None,
     control_word: Optional[bytes] = None,
     sequence_number: int = 0,

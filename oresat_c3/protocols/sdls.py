@@ -40,6 +40,9 @@ class SdlsOresat(SdlsEmpty):
         return SPI_LEN + SEQ_NUM_LEN
 
     def apply(self, frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
+        if hmac_key is None:
+            raise ValueError("hmac_key should not be none if using VCID with Oresat SDLS SPI.")
+
         sdls_header = bytearray(b"\x00\x01") + seq_num.to_bytes(SEQ_NUM_LEN, "little")
 
         frame.insert_zone = sdls_header
@@ -57,6 +60,9 @@ class SdlsOresat(SdlsEmpty):
         return
 
     def verify(self, frame: TransferFrame, hmac_key: bytes) -> int:
+        if hmac_key is None:
+            raise ValueError("hmac_key should not be none if using VCID with Oresat SDLS SPI.")
+
         sdls_header = frame.insert_zone
         payload = frame.tfdf.pack()[:-HMAC_LEN]
         authenticated_data = frame.header.pack() + sdls_header + payload
