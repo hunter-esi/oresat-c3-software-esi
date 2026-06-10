@@ -5,6 +5,7 @@ Handles interfacing with the radio driver daemon.
 """
 
 import socket
+import struct
 import time
 from queue import SimpleQueue
 
@@ -21,6 +22,7 @@ class RadiosService(Service):
     BEACON_DOWNLINK_ADDR = ("localhost", 10015)
     EDL_UPLINK_ADDR = ("localhost", 10025)
     EDL_DOWNLINK_ADDR = ("localhost", 10016)
+    UHF_RSSI_ADDR = ("localhost", 10030)
     BUFFER_LEN = 4096
 
     def __init__(self, mock_hw: bool = False):
@@ -78,6 +80,13 @@ class RadiosService(Service):
         logger.info(f"EDL downlink socket: {self.EDL_DOWNLINK_ADDR}")
         self._edl_downlink_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
+        # EDL downlink: UDP client
+        logger.info(f"UHF RSSI socket: {self.UHF_RSSI_ADDR}")
+        self._uhf_rssi_socket = socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM | socket.SOCK_NONBLOCK
+        )
+        self._uhf_rssi_socket.bind(self.UHF_RSSI_ADDR)
+
         if not self._mock_hw:
             self.node.daemons["uhf"].start()
             self.node.daemons["lband"].start()
@@ -99,6 +108,16 @@ class RadiosService(Service):
 
         if recv := self._recv_edl_request():
             self.recv_queue.put(recv)
+        try:
+            rssi, src = self._uhf_rssi_socket.recvfrom(128)
+        except OSError:
+            pass
+        else:
+            try:
+                self.node.od["uhf"]["rssi"].value = struct.unpack('b', rssi)[0]
+            except struct.error as e:
+                logger.error(f"Invalid RSSI paylaod: {e}")
+            logger.debug(f"UHF rssi: {rssi} from {src}")
 
     def on_stop(self):
         """Power down radios and stop daemons."""
@@ -110,6 +129,7 @@ class RadiosService(Service):
         self._beacon_downlink_socket.close()
         self._edl_downlink_socket.close()
         self._edl_uplink_socket.close()
+        self._uhf_rssi_socket.close()
 
         # power down sequence
         logger.info("disabling uhf radio")
