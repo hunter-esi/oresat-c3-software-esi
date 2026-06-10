@@ -13,7 +13,7 @@ from olaf import Service, logger
 
 from .. import C3State
 from ..drivers.si41xx import Si41xx, Si41xxIfdiv
-from ..subsystems._gpio import request_gpio_output
+from ..subsystems._gpio import request_gpio_input, request_gpio_output
 
 
 class RadiosService(Service):
@@ -287,7 +287,7 @@ class UHFRadio(Radio):
     def __init__(self):
         """Request gpio."""
         super().__init__()
-        self._uhf_tot_ok_gpio = request_gpio_output("/dev/gpiochip0", 25, "UHF_TOT_OK")
+        self._uhf_tot_ok_gpio = request_gpio_input("/dev/gpiochip0", 25, "UHF_TOT_OK")
         self._uhf_tot_clear_gpio = request_gpio_output("/dev/gpiochip0", 26, "UHF_TOT_CLEAR")
         self._uhf_enable_gpio = request_gpio_output("/dev/gpiochip0", 16, "UHF_ENABLE")
 
