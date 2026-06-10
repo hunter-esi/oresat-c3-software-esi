@@ -1,6 +1,5 @@
 from typing import Optional
 
-from .sdls import get_sdls_len, get_sdls_header_len, apply_sdls
 from spacepackets.uslp import (
     BypassSequenceControlFlag,
     PrimaryHeader,
@@ -16,6 +15,8 @@ from spacepackets.uslp.frame import (
     UslpProtocolIdentifier,
     VarFrameProperties,
 )
+
+from .sdls import apply_sdls, get_sdls_header_len, get_sdls_len
 
 SPACECRAFT_ID = 0x4F53  # aka "OS" in ASCII
 

@@ -3,7 +3,6 @@ import hmac
 
 from spacepackets.uslp import TransferFrame
 
-
 HMAC_LEN = 32
 SPI_LEN = 2
 SEQ_NUM_LEN = 4
