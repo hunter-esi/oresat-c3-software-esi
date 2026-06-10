@@ -86,7 +86,7 @@ class NodeFlasherService(Service):
         except Empty:
             pass
         except Exception as e:
-            logger.error(f"Node flasher error: {e}")
+            logger.exception(f"Node flasher exception: {e}")
 
     def _wait_flash_status_ok(self, flash_sdo, timeout_s):
         end = time.time() + timeout_s
