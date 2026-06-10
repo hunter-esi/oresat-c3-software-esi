@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: RUF001 - we use a fancy x for display
 """Sends EDL ping commands continuously, tracking responses"""
 
 import os

@@ -34,7 +34,7 @@ jobs:
 
     - name: Lint with Ruff
       if: always() && steps.dependencies.conclusion == 'success'
-      run: ruff check --select=E,F,I
+      run: ruff check
 
     - name: Check format with Ruff
       if: always() && steps.dependencies.conclusion == 'success'

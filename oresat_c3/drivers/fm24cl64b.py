@@ -18,7 +18,7 @@ class Fm24cl64b:
 
     ADDR_MIN = 0x50
     ADDR_MAX = 0x5F
-    ADDRESSES = list(range(ADDR_MIN, ADDR_MAX + 1))
+    ADDRESSES = range(ADDR_MIN, ADDR_MAX + 1)
 
     SIZE = 8192  # size of F-RAM in bytes
 
