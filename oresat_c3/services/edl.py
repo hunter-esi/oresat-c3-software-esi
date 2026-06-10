@@ -60,6 +60,7 @@ from ..protocols.edl_packet import SRC_DEST_UNICLOGS, EdlPacket, EdlPacketError,
 from ..subsystems.rtc import set_rtc_time, set_system_time_to_rtc_time
 from .beacon import BeaconService
 from .channel_router import ChannelRouterService
+from .node_flasher import NodeFlasherService
 from .node_manager import NodeManagerService
 
 
@@ -72,6 +73,7 @@ class EdlService(Service):
         node_mgr_service: NodeManagerService,
         beacon_service: BeaconService,
         channel_router_service: ChannelRouterService,
+        node_flasher_service: NodeFlasherService,
     ):
         super().__init__()
 
@@ -90,6 +92,7 @@ class EdlService(Service):
         self._file_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
             EdlVcid.FILE_TRANSFER
         )
+        self._node_flasher_service = node_flasher_service
 
         self._file_receiver = EdlFileReciever(node.fwrite_cache)
 
@@ -357,6 +360,20 @@ class EdlService(Service):
                 logger.error(e)
                 ecode = e.code
             ret = (ecode, len(data), data)
+        elif request.code == EdlCommandCode.CO_NODE_FLASH:
+            node_id, filename, throttle_delay, block_transfer = request.args
+            logger.info(
+                f"EDL queuing node flash for node 0x{node_id:02X} with file {filename} "
+                f"(throttle: {throttle_delay}, block: {block_transfer})"
+            )
+            try:
+                self._node_flasher_service.enqueue_flash(
+                    node_id, filename, throttle_delay=throttle_delay, block_transfer=block_transfer
+                )
+                ret = True
+            except Exception as e:
+                logger.error(f"Failed to queue flash: {e}")
+                ret = False
 
         if ret is not None and not isinstance(ret, tuple):
             ret = (ret,)  # make ret a tuple

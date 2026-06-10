@@ -434,6 +434,63 @@ class EdlCommandShell(Cmd):
 
         self._send_packet(EdlCommandCode.RTC_SET_TIME, (value,))
 
+    def help_node_flash(self):
+        """Print help message for node_flash command."""
+        print("node_flash <node> <filename> [throttle_delay] [block_transfer]")
+        print("  <node> is the node id (e.g. 0x7C or 42) or node name")
+        print("  <filename> is the name of the bin file in the C3 cache to flash")
+        print("  [throttle_delay] is an optional delay between packets in seconds (default: 0.0)")
+        print("  [block_transfer] is optional (true/false, 1/0) for block download (default: true)")
+
+    def do_node_flash(self, arg: str):
+        """Do the node_flash command."""
+
+        args = arg.split()
+        if len(args) < 2 or len(args) > 4:
+            self.help_node_flash()
+            return
+
+        node_id = None
+
+        if args[0].startswith("0x"):
+            node_id = int(args[0], 16)
+        elif args[0] in self.configs.cards:
+            node_id = self.configs.cards[args[0]].node_id
+        else:
+            try:
+                node_id = int(args[0])
+            except ValueError:
+                print("invalid node arg. Must be hex, int, or valid card name.")
+                return
+
+        filename = args[1]
+
+        throttle_delay = 0.0
+        block_transfer = True
+
+        if len(args) >= 3:
+            try:
+                throttle_delay = float(args[2])
+            except ValueError:
+                print("invalid throttle_delay arg. Must be a float.")
+                return
+
+        if len(args) >= 4:
+            arg3 = args[3].lower()
+            if arg3 in ["true", "1"]:
+                block_transfer = True
+            elif arg3 in ["false", "0"]:
+                block_transfer = False
+            else:
+                print("invalid block_transfer arg. Must be true/false or 1/0.")
+                return
+
+        response = self._send_packet(
+            EdlCommandCode.CO_NODE_FLASH, (node_id, filename, throttle_delay, block_transfer)
+        )
+        if response is not None:
+            print(f"Flash command sent. Response: {response}")
+
 
 def main():
     """Main for EDL shell script"""
