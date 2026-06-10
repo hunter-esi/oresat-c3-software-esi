@@ -83,7 +83,8 @@ class EdlService(Service):
             EdlVcid.C3_COMMAND
         )
         self._cmd_uplink: SimpleQueue[TransferFrame] = channel_router_service.request_uplink_route(
-            EdlVcid.C3_COMMAND
+            EdlVcid.C3_COMMAND,
+            use_cop=True,
         )
         self._file_downlink: SimpleQueue[bytes] = channel_router_service.request_downlink_route(
             EdlVcid.FILE_TRANSFER
@@ -175,9 +176,7 @@ class EdlService(Service):
         except Empty:
             return
         req_packet = self._frame_to_packet(frame)
-        if req_packet is None:
-            self.sleep_ms(50)
-        else:
+        if req_packet is not None:
             try:
                 res_payload = self._run_cmd(req_packet.payload)
                 if not res_payload.values:
@@ -190,20 +189,22 @@ class EdlService(Service):
         try:
             frame = self._file_uplink.get_nowait()
         except Empty:
-            return
-        req_packet = self._frame_to_packet(frame)
+            frame = None
+
+        if frame is not None:
+            req_packet = self._frame_to_packet(frame)
+        else:
+            req_packet = None
 
         if req_packet is None:
             if self._file_receiver.state == CfdpState.BUSY:
                 res_payload = self._file_receiver.loop(None)
             else:
-                self.sleep_ms(50)
                 return
         else:
             res_payload = self._file_receiver.loop(req_packet.payload)
 
         if res_payload is None:
-            self.sleep_ms(50)
             return
 
         for payload in res_payload:
@@ -212,6 +213,7 @@ class EdlService(Service):
     def on_loop(self):
         self._process_command()
         self._process_cfdp()
+        self.sleep_ms(50)
 
     def _run_cmd(self, request: EdlCommandRequest) -> EdlCommandResponse:
         ret: Any = None

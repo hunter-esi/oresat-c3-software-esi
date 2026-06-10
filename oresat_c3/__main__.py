@@ -1,13 +1,12 @@
 """OreSat C3 app main."""
 
+import logging
 import os
 import socket
 import time
 from threading import Thread
 
 from olaf import (
-    Gpio,
-    GpioError,
     ServiceState,
     UpdaterState,
     app,
@@ -23,12 +22,29 @@ from . import C3State, __version__
 from .protocols.cachestore import CacheStore
 from .services.beacon import BeaconService
 from .services.channel_router import ChannelRouterService
+from .services.cop_manager import CopManagerService
 from .services.edl import EdlService
 from .services.node_flasher import NodeFlasherService
 from .services.node_manager import NodeManagerService
 from .services.radios import RadiosService
 from .services.state import StateService
 from .subsystems.rtc import set_system_time_to_rtc_time
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # Find the correct call depth so loguru reports the right source location
+        frame, depth = logging.currentframe(), 0
+        while frame and (depth == 0 or frame.f_code.co_filename == logging.__file__):
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
 @rest_api.app.route("/beacon")
@@ -53,23 +69,6 @@ def node_mgr_template():
 def keys_template():
     """Render keys template."""
     return render_olaf_template("keys.html", name="Keys")
-
-
-def get_hw_id(mock: bool) -> int:
-    """
-    Get the hardware ID of the C3 card.
-
-    There are 5 gpio pins used to get the unique hardware of the card.
-    """
-
-    hw_id = 0
-    try:
-        for i in range(5):
-            hw_id |= Gpio(f"HW_ID_BIT_{i}", mock).value << i
-    except GpioError:
-        pass
-    logger.info(f"hardware id is 0x{hw_id:X}")
-    return hw_id
 
 
 def watchdog():
@@ -97,12 +96,13 @@ def watchdog():
 
         updating = app.od["updater"]["status"].value == UpdaterState.UPDATING
         edl = app.od["status"].value == C3State.EDL
+        override = app.od["performance_override"].value
 
-        if not performance and (updating or edl):
+        if not performance and (updating or edl or override):
             logger.info("setting cpufreq governor to performance mode")
             set_cpufreq_gov("performance")
             performance = True
-        elif performance and not updating and not edl:
+        elif performance and not (updating or edl or override):
             logger.info("setting cpufreq governor to powersave mode")
             set_cpufreq_gov("powersave")
             performance = False
@@ -119,6 +119,14 @@ def main():
     mock_args = [i.lower() for i in args.mock_hw]
     mock_hw = len(mock_args) != 0
 
+    cop1_logger = logging.getLogger("ccsds_cop")
+    cop1_logger.handlers = [InterceptHandler()]
+    if args.verbose:
+        cop1_logger.setLevel(logging.DEBUG)
+    else:
+        cop1_logger.setLevel(logging.INFO)
+    cop1_logger.propagate = False
+
     # start watchdog thread ASAP
     thread = Thread(target=watchdog, daemon=True)
     thread.start()
@@ -127,15 +135,14 @@ def main():
     app.node._fwrite_cache = CacheStore(app.node.fwrite_cache.dir)  # pylint: disable=W0212
 
     app.od["versions"]["sw_version"].value = __version__
-    if app.od["versions"]["hw_version"].value == "6.0":
-        app.od["hw_id"].value = get_hw_id(mock_hw)
 
     state_service = StateService(config.fram_def, mock_hw)
     radios_service = RadiosService(mock_hw)
     beacon_service = BeaconService(config.beacon_def, radios_service)
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
-    channel_router_service = ChannelRouterService(radios_service)
     node_flasher_service = NodeFlasherService(app.node.fwrite_cache.dir, node_mgr_service)
+    cop_service = CopManagerService()
+    channel_router_service = ChannelRouterService(radios_service, cop_service)
     edl_service = EdlService(
         app.node, node_mgr_service, beacon_service, channel_router_service, node_flasher_service
     )
@@ -143,6 +150,7 @@ def main():
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
     app.add_service(beacon_service)
+    app.add_service(cop_service)
     app.add_service(channel_router_service)
     app.add_service(edl_service)
     app.add_service(node_mgr_service)

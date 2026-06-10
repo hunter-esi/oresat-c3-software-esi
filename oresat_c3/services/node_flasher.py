@@ -6,6 +6,7 @@ Handles flashing Zephyr/MCUboot images to nodes via CANopen.
 import os
 import time
 from queue import Empty, SimpleQueue
+from typing import Optional
 
 from olaf import Service, logger
 
@@ -56,7 +57,11 @@ class NodeFlasherService(Service):
         self.sdo_retries = sdo_retries
 
     def enqueue_flash(
-        self, node_id: int, filename: str, throttle_delay: float = None, block_transfer: bool = None
+        self,
+        node_id: int,
+        filename: str,
+        throttle_delay: Optional[float] = None,
+        block_transfer: Optional[bool] = None,
     ):
         """Called by EdlService to trigger a flash."""
         if throttle_delay is None:
