@@ -7,6 +7,7 @@ from ccsds_cop.cop_1 import ControlWord, CopService
 from ccsds_cop.cop_1.farm import Farm1
 from olaf import Service, logger
 from spacepackets.uslp import TransferFrame
+from spacepackets.uslp.defs import UslpChecksumError
 from spacepackets.uslp.frame import FrameType
 from spacepackets.uslp.header import SourceOrDestField
 
@@ -67,7 +68,9 @@ class ChannelRouterService(Service):
                 self._uplink_routes[vcid].put_nowait(frame)
             else:
                 logger.error(f"No route for VCID {frame.header.vcid}")
-
+        except UslpChecksumError as e:
+            logger.error(f"Frame checksum error: {e}")
+            logger.debug(message)
         except Exception as e:
             logger.exception(f"Failed to unpack frame: {e}")
 
