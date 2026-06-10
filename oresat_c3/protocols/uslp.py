@@ -154,9 +154,7 @@ def make_frame(
         ),
     )
 
-    frame = TransferFrame(
-        header=frame_header, tfdf=tfdf, op_ctrl_field=control_word
-    )
+    frame = TransferFrame(header=frame_header, tfdf=tfdf, op_ctrl_field=control_word)
 
     apply_sdls(frame, sequence_number, hmac_key)
 

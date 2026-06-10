@@ -100,7 +100,7 @@ class EdlPacket:
             vcid=self.vcid.value,
             src_dest=self.src_dest,
             sequence_number=self.seq_num,
-            hmac_key=hmac_key
+            hmac_key=hmac_key,
         )
         return frame.pack(frame_type=FrameType.VARIABLE)
 

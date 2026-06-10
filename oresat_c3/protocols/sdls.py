@@ -8,8 +8,10 @@ HMAC_LEN = 32
 SPI_LEN = 2
 SEQ_NUM_LEN = 4
 
+
 class SdlsInvalidHmacError(Exception):
     pass
+
 
 def gen_hmac(hmac_key: bytes, message: bytes) -> bytes:
     """Helper function to generate HMAC value from HMAC key and the message."""
@@ -19,7 +21,7 @@ def gen_hmac(hmac_key: bytes, message: bytes) -> bytes:
 
 class SdlsEmpty:
     def len(self) -> int:
-       return 0
+        return 0
 
     def header_len(self) -> int:
         return 0
@@ -33,7 +35,7 @@ class SdlsEmpty:
 
 class SdlsOresat(SdlsEmpty):
     def len(self) -> int:
-       return HMAC_LEN + SPI_LEN + SEQ_NUM_LEN
+        return HMAC_LEN + SPI_LEN + SEQ_NUM_LEN
 
     def header_len(self) -> int:
         return SPI_LEN + SEQ_NUM_LEN
@@ -69,7 +71,7 @@ class SdlsOresat(SdlsEmpty):
 
         hmac_expected = gen_hmac(hmac_key, authenticated_data)
         hmac_actual = frame.tfdf.tfdz[-HMAC_LEN:]
-        frame.tfdf.tfdz = frame.tfdf.tfdz[:-HMAC_LEN] # strip the hmac from the transfer frame.
+        frame.tfdf.tfdz = frame.tfdf.tfdz[:-HMAC_LEN]  # strip the hmac from the transfer frame.
 
         if not hmac.compare_digest(hmac_expected, hmac_actual):
             raise SdlsInvalidHmacError(
@@ -82,6 +84,7 @@ class SdlsOresat(SdlsEmpty):
 
 # There should be some VC parameters class that sets how VCs interact with COP-1 and SDLS.
 SPI_LIST = [SdlsOresat(), SdlsOresat(), SdlsEmpty()]  # spi definition.
+
 
 def get_sdls_len(vcid: int) -> int:
     """
@@ -103,6 +106,7 @@ def get_sdls_len(vcid: int) -> int:
     except IndexError as e:
         raise ValueError(f"VCID {vcid} does not have corresponding SPI.") from e
 
+
 def get_sdls_header_len(vcid: int) -> int:
     """
     Get the length of the header for the SPI associated with the given Virtual Channel.
@@ -122,6 +126,7 @@ def get_sdls_header_len(vcid: int) -> int:
         return SPI_LIST[vcid].header_len()
     except IndexError as e:
         raise ValueError(f"VCID {vcid} does not have corresponding SPI.") from e
+
 
 def apply_sdls(frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
     """
@@ -146,6 +151,7 @@ def apply_sdls(frame: TransferFrame, seq_num: int, hmac_key: bytes) -> None:
         return SPI_LIST[frame.header.vcid].apply(frame, seq_num, hmac_key)
     except IndexError as e:
         raise ValueError(f"VCID {frame.header.vcid} does not have corresponding SPI.") from e
+
 
 def verify_sdls(frame: TransferFrame, hmac_key: bytes) -> int:
     """
