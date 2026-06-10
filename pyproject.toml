@@ -21,7 +21,7 @@ dependencies = [
     "cfdp-py~=0.6.0",
     "dataclasses-json",
     "fastcrc~=0.3",
-    "oresat-configs==0.8.*",
+    "oresat-configs>=1.1.2",
     "oresat-olaf>=3.6.5",
     "smbus2",
     "spacepackets>=0.30.1",
