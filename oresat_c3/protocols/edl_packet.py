@@ -101,6 +101,7 @@ class EdlPacket:
             src_dest=self.src_dest,
             sequence_number=self.seq_num,
             hmac_key=hmac_key,
+            bypass=self.bypass,
         )
         return frame.pack(frame_type=FrameType.VARIABLE)
 
