@@ -332,13 +332,13 @@ def _edl_req_sdo_write_unpack_cb(raw: bytes) -> tuple:
 
 
 def _edl_res_sdo_read_pack_cb(values: tuple) -> bytes:
-    res = struct.pack("<2I", *values[:2])
-    res += values[2]
+    res = struct.pack("<BHB2I", *values[:5])
+    res += values[5]
     return res
 
 
 def _edl_res_sdo_read_unpack_cb(raw: bytes) -> tuple:
-    fmt = "<2I"
+    fmt = "<BHB2I"
     size = struct.calcsize(fmt)
     res = struct.unpack(fmt, raw[:size])
     res += (raw[size:],)
@@ -443,7 +443,7 @@ class EdlCommandRequest:
         raw = self.code.value.to_bytes(1, "little")
 
         if self.command.req_fmt is not None:
-            raw += struct.pack(self.command.req_fmt, *self.args)
+            raw += struct.pack("=" + self.command.req_fmt, *self.args)
         elif self.command.req_pack_func is not None:
             raw += self.command.req_pack_func(self.args)
 
@@ -464,7 +464,7 @@ class EdlCommandRequest:
         command = EDL_COMMANDS[code]
 
         if command.req_fmt is not None:
-            args = struct.unpack(command.req_fmt, raw[1:])
+            args = struct.unpack("=" + command.req_fmt, raw[1:])
         elif command.req_unpack_func is not None:
             args = command.req_unpack_func(raw[1:])
         else:
@@ -510,7 +510,7 @@ class EdlCommandResponse:
         raw = self.code.value.to_bytes(1, "little")
 
         if self.command.res_fmt is not None:
-            raw += struct.pack(self.command.res_fmt, *self.values)
+            raw += struct.pack("=" + self.command.res_fmt, *self.values)
         elif self.command.res_pack_func is not None:
             raw += self.command.res_pack_func(self.values)
 
@@ -531,7 +531,7 @@ class EdlCommandResponse:
         command = EDL_COMMANDS[code]
 
         if command.res_fmt is not None:
-            values = struct.unpack(command.res_fmt, raw[1:])
+            values = struct.unpack("=" + command.res_fmt, raw[1:])
         elif command.res_unpack_func is not None:
             values = command.res_unpack_func(raw[1:])
         else:

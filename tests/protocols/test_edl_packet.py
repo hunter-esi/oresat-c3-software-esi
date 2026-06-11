@@ -10,8 +10,8 @@ from oresat_c3.protocols.edl_packet import (
     SRC_DEST_ORESAT,
     SRC_DEST_UNICLOGS,
     EdlPacket,
-    EdlPacketError,
 )
+from oresat_c3.protocols.sdls import SdlsInvalidHmacError
 from oresat_c3.protocols.uslp import TC_MIN_LEN, unpack_frame
 
 
@@ -74,7 +74,7 @@ class TestEdlPacket(unittest.TestCase):
         edl_message_req = edl_packet_req.pack(invalid_hmac)
 
         frame = unpack_frame(edl_message_req)
-        with self.assertRaises(EdlPacketError):
+        with self.assertRaises(SdlsInvalidHmacError):
             EdlPacket.from_frame(frame, self.hmac_key)
 
     def test_unpack_invalid_vcid(self):
@@ -89,8 +89,5 @@ class TestEdlPacket(unittest.TestCase):
             INVALID = 20
 
         edl_packet_req.vcid = TestEnum.INVALID
-        req = edl_packet_req.pack(self.hmac_key)
-
-        frame = unpack_frame(req)
-        with self.assertRaises(EdlPacketError):
-            EdlPacket.from_frame(frame, self.hmac_key)
+        with self.assertRaises(IndexError and ValueError):
+            edl_packet_req.pack(self.hmac_key)

@@ -57,6 +57,7 @@ from ..protocols.edl_command import (
     EdlCommandResponse,
 )
 from ..protocols.edl_packet import SRC_DEST_UNICLOGS, EdlPacket, EdlPacketError, EdlVcid
+from ..protocols.sdls import SdlsInvalidHmacError
 from ..subsystems.rtc import set_rtc_time, set_system_time_to_rtc_time
 from .beacon import BeaconService
 from .channel_router import ChannelRouterService
@@ -136,7 +137,7 @@ class EdlService(Service):
     def _frame_to_packet(self, frame: TransferFrame) -> Optional[EdlPacket]:
         try:
             packet = EdlPacket.from_frame(frame, self._hmac_key, not self._flight_mode)
-        except EdlPacketError as e:
+        except (EdlPacketError, SdlsInvalidHmacError) as e:
             self._rejected_count += 1
             self._rejected_count &= 0xFF_FF_FF_FF
             logger.error(f"invalid EDL request packet: {e}")
@@ -359,7 +360,7 @@ class EdlService(Service):
             except canopen.sdo.exceptions.SdoAbortedError as e:
                 logger.error(e)
                 ecode = e.code
-            ret = (ecode, len(data), data)
+            ret = (node_id, index, subindex, ecode, len(data), data)
         elif request.code == EdlCommandCode.CO_NODE_FLASH:
             node_id, filename, throttle_delay, block_transfer = request.args
             logger.info(

@@ -12,7 +12,7 @@ from spacepackets.uslp.frame import FrameType
 from spacepackets.uslp.header import SourceOrDestField
 
 from ..protocols.edl_packet import EdlVcid
-from ..protocols.uslp import SEQ_NUM_LEN, make_frame, unpack_frame
+from ..protocols.uslp import make_frame, unpack_frame
 from .cop_manager import CopManagerService
 from .radios import RadiosService
 
@@ -51,7 +51,6 @@ class ChannelRouterService(Service):
                     vcid=EdlVcid.IDLE,
                     src_dest=SourceOrDestField.SOURCE,
                     control_word=clcw.pack(),
-                    insert_zone=bytes(SEQ_NUM_LEN),
                 )
                 self._radios_service.send_edl_response(frame.pack(frame_type=FrameType.VARIABLE))
             self._last_clcw_time = now

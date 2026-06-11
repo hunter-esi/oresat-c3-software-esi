@@ -33,6 +33,7 @@ from .subsystems.rtc import set_system_time_to_rtc_time
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
+        # Map the logging level to loguru's level
         try:
             level = logger.level(record.levelname).name
         except ValueError:
@@ -44,7 +45,8 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+        # + 2 to get into the new frame and out of the logging funciton in that frame
+        logger.opt(depth=depth + 2, exception=record.exc_info).log(level, record.getMessage())
 
 
 @rest_api.app.route("/beacon")

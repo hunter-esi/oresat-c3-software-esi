@@ -16,21 +16,14 @@ from spacepackets.uslp.frame import (
     VarFrameProperties,
 )
 
+from .sdls import apply_sdls, get_sdls_header_len, get_sdls_len
+
 SPACECRAFT_ID = 0x4F53  # aka "OS" in ASCII
 
 PRIMARY_HEADER_LEN = 7
-SEQ_NUM_LEN = 6
 DFH_LEN = 1
-HMAC_LEN = 32
 FECF_LEN = 2
-TC_MIN_LEN = PRIMARY_HEADER_LEN + SEQ_NUM_LEN + DFH_LEN + HMAC_LEN + FECF_LEN
-
-FRAME_PROPS = VarFrameProperties(
-    has_insert_zone=True,
-    has_fecf=True,
-    truncated_frame_len=0,
-    insert_zone_len=SEQ_NUM_LEN,
-)
+TC_MIN_LEN = PRIMARY_HEADER_LEN + DFH_LEN + FECF_LEN
 
 
 class UslpInvalidSpacecraftIdError(Exception):
@@ -70,9 +63,20 @@ def unpack_frame(raw: bytes) -> TransferFrame:
     #    Individual frame fields are check by unpack
     # e) Computed CRC matches FECF: CRC is checked by unpack
 
+    vcid = ((raw[2] & 0b111) << 3) | ((raw[3] >> 5) & 0b111)
+
+    sdls_header_len = get_sdls_header_len(vcid)
+
+    frame_props = VarFrameProperties(
+        has_insert_zone=sdls_header_len != 0,
+        has_fecf=True,
+        truncated_frame_len=0,
+        insert_zone_len=sdls_header_len,
+    )
+
     if len(raw) < TC_MIN_LEN:
         raise UslpInvalidRawPacketOrFrameLenError(f"Packet too short: {len(raw)}")
-    frame = TransferFrame.unpack(raw, FrameType.VARIABLE, FRAME_PROPS)
+    frame = TransferFrame.unpack(raw, FrameType.VARIABLE, frame_props)
     if frame.header.scid != SPACECRAFT_ID:
         raise UslpInvalidSpacecraftIdError
 
@@ -83,9 +87,10 @@ def make_frame(
     payload: bytes,
     vcid: int,
     src_dest: SourceOrDestField,
+    hmac_key: Optional[bytes] = None,
     vcf_count: Optional[int] = None,
     control_word: Optional[bytes] = None,
-    insert_zone: Optional[bytes] = None,
+    sequence_number: int = 0,
     bypass: bool = False,
 ) -> TransferFrame:
     """Create and pack a USLP
@@ -98,12 +103,14 @@ def make_frame(
         The Virtual Channel Identifier of the frame.
     src_dest
         The Source or Destination identifier.
+    hmac_key: bytes,
+        The key used to authenticate the message.
     vcf_count
         The Virtual Channel Frame count. If None, the VCF length is to 0 and no count is specified.
     control_word
         The CLCW, if any, to pack in the frame.
-    insert_zone
-        The insert zone data, if any.
+    sequence_number
+        The anti-replay sequence number for SDLS.
     bypass
         Specify if this frame is bypass (Type-BD) frame.
 
@@ -115,18 +122,23 @@ def make_frame(
 
     tfdf = TransferFrameDataField(
         tfdz_cnstr_rules=TfdzConstructionRules.VpNoSegmentation,
-        uslp_ident=UslpProtocolIdentifier.USER_DEFINED_OCTET_STREAM,
+        uslp_ident=UslpProtocolIdentifier.SPACE_PACKETS_ENCAPSULATION_PACKETS,
+        # Needs to be this, yamcs does not support user defined octet stream and this functions.
         tfdz=payload,
     )
 
     # USLP transfer frame total length - 1
     frame_len = len(payload) + PRIMARY_HEADER_LEN + DFH_LEN + FECF_LEN - 1
-    if insert_zone:
-        frame_len += len(insert_zone)
 
     has_clcw = control_word is not None
     if has_clcw:
         frame_len += len(control_word)
+
+    # USLP transfer frame total length - 1
+    frame_len = len(payload) + PRIMARY_HEADER_LEN + DFH_LEN + FECF_LEN - 1
+    if has_clcw:
+        frame_len += len(control_word)
+    frame_len += get_sdls_len(vcid)
 
     frame_header = PrimaryHeader(
         scid=SPACECRAFT_ID,
@@ -145,6 +157,8 @@ def make_frame(
         ),
     )
 
-    return TransferFrame(
-        header=frame_header, tfdf=tfdf, op_ctrl_field=control_word, insert_zone=insert_zone
-    )
+    frame = TransferFrame(header=frame_header, tfdf=tfdf, op_ctrl_field=control_word)
+
+    apply_sdls(frame, sequence_number, hmac_key)
+
+    return frame
