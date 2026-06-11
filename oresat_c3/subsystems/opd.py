@@ -258,6 +258,8 @@ class OpdNode:
         except Max7310Error:
             if self._status != OpdNodeState.NOT_FOUND:
                 self._status = OpdNodeState.FAULT
+        if fault:
+            logger.error(f"OPD node {self.name} faulted")
         return fault
 
 
