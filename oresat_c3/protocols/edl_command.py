@@ -328,7 +328,7 @@ def _edl_req_sdo_write_unpack_cb(raw: bytes) -> tuple:
     fmt = "<BHBI"
     size = struct.calcsize(fmt)
     values = struct.unpack(fmt, raw[:size])
-    return (values, raw[size:])
+    return (*values, raw[size:])
 
 
 def _edl_res_sdo_read_pack_cb(values: tuple) -> bytes:

@@ -5,15 +5,15 @@ Handles interfacing with the radio driver daemon.
 """
 
 import socket
+import struct
 import time
 from queue import SimpleQueue
 
 from gpiod.line import Value
 from olaf import Service, logger
 
-from .. import C3State
 from ..drivers.si41xx import Si41xx, Si41xxIfdiv
-from ..subsystems._gpio import request_gpio_output
+from ..subsystems._gpio import request_gpio_input, request_gpio_output
 
 
 class RadiosService(Service):
@@ -22,7 +22,8 @@ class RadiosService(Service):
     BEACON_DOWNLINK_ADDR = ("localhost", 10015)
     EDL_UPLINK_ADDR = ("localhost", 10025)
     EDL_DOWNLINK_ADDR = ("localhost", 10016)
-    BUFFER_LEN = 1024
+    UHF_RSSI_ADDR = ("localhost", 10030)
+    BUFFER_LEN = 4096
 
     def __init__(self, mock_hw: bool = False):
         """
@@ -79,6 +80,13 @@ class RadiosService(Service):
         logger.info(f"EDL downlink socket: {self.EDL_DOWNLINK_ADDR}")
         self._edl_downlink_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
+        # EDL downlink: UDP client
+        logger.info(f"UHF RSSI socket: {self.UHF_RSSI_ADDR}")
+        self._uhf_rssi_socket = socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM | socket.SOCK_NONBLOCK
+        )
+        self._uhf_rssi_socket.bind(self.UHF_RSSI_ADDR)
+
         if not self._mock_hw:
             self.node.daemons["uhf"].start()
             self.node.daemons["lband"].start()
@@ -100,18 +108,28 @@ class RadiosService(Service):
 
         if recv := self._recv_edl_request():
             self.recv_queue.put(recv)
-        if self.uhf and not self.node.od["status"].value == C3State.EDL:
-            self.uhf_off()
+        try:
+            rssi, src = self._uhf_rssi_socket.recvfrom(128)
+        except OSError:
+            pass
+        else:
+            try:
+                self.node.od["uhf"]["rssi"].value = struct.unpack('b', rssi)[0]
+            except struct.error as e:
+                logger.error(f"Invalid RSSI paylaod: {e}")
+            logger.debug(f"UHF rssi: {rssi} from {src}")
 
     def on_stop(self):
         """Power down radios and stop daemons."""
         logger.info("disabling radios")
         if not self._mock_hw:
             self.node.daemons["lband"].stop()
+            self.node.daemons["uhf"].stop()
 
         self._beacon_downlink_socket.close()
         self._edl_downlink_socket.close()
         self._edl_uplink_socket.close()
+        self._uhf_rssi_socket.close()
 
         # power down sequence
         logger.info("disabling uhf radio")
@@ -124,19 +142,6 @@ class RadiosService(Service):
         if not self._mock_hw:
             self._radio_enable_gpio.set_value(self._radio_enable_gpio.offsets[0], Value.INACTIVE)
 
-    def uhf_on(self):
-        self.enable_uhf = True
-        self.uhf.enable()
-        if "uhf" in self.node.daemons:
-            self.node.daemons["uhf"].start()
-
-    def uhf_off(self):
-        self.sleep_ms(100)
-        if "uhf" in self.node.daemons:
-            self.node.daemons["uhf"].stop()
-        self.uhf.disable()
-        self.enable_uhf = False
-
     def send_edl_response(self, message: bytes):
         """
         Send an EDL packet.
@@ -146,8 +151,6 @@ class RadiosService(Service):
         message : bytes
             The message to send as a byte string.
         """
-        if not self.enable_uhf:
-            self.uhf_on()
         try:
             self._edl_downlink_socket.sendto(message, self.EDL_DOWNLINK_ADDR)
         except Exception as e:  # pylint: disable=W0718
@@ -164,14 +167,12 @@ class RadiosService(Service):
         message : bytes
             The beacon to beacon.
         """
-        self.uhf_on()
         try:
             self._beacon_downlink_socket.sendto(message, self.BEACON_DOWNLINK_ADDR)
         except Exception as e:  # pylint: disable=W0718
             logger.error(f"failed to send beacon message: {e}")
 
         logger.debug(f"Sent beacon downlink packet: {message.hex(sep=' ')}")
-        self.uhf_off()
 
     def _recv_edl_request(self) -> bytes:
         """
@@ -186,7 +187,6 @@ class RadiosService(Service):
             message, src = self._edl_uplink_socket.recvfrom(self.BUFFER_LEN)
         except socket.timeout:
             return b""
-
         logger.debug(f"received EDL uplink packet: {message.hex(sep=' ')} from {src}")
 
         return message
@@ -287,7 +287,7 @@ class UHFRadio(Radio):
     def __init__(self):
         """Request gpio."""
         super().__init__()
-        self._uhf_tot_ok_gpio = request_gpio_output("/dev/gpiochip0", 25, "UHF_TOT_OK")
+        self._uhf_tot_ok_gpio = request_gpio_input("/dev/gpiochip0", 25, "UHF_TOT_OK")
         self._uhf_tot_clear_gpio = request_gpio_output("/dev/gpiochip0", 26, "UHF_TOT_CLEAR")
         self._uhf_enable_gpio = request_gpio_output("/dev/gpiochip0", 16, "UHF_ENABLE")
 
