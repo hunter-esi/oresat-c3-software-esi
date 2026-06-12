@@ -7,7 +7,7 @@ from os.path import abspath
 
 from olaf import Service, logger, new_oresat_file
 
-from .node_manager import NodeManagerService
+from .node_manager import NodeManagerService, NodeState
 
 
 class MissionDatabaseService(Service):
@@ -19,19 +19,12 @@ class MissionDatabaseService(Service):
 
         # This should eventually be defined by something in oresat configs.
         # For now will be hardcoded.
-        self._scet_seconds_int = 0
-        self._gps_pos_x = 0
-        self._gps_pos_y = 0
-        self._gps_pos_z = 0
-        self._gps_pos_vx = 0
-        self._gps_pos_vy = 0
-        self._gps_pos_vz = 0
-
         self._refresh_delay = 0
         self._data_per_file = 0
         self._max_num_files = 0
-        self.next_gps = 1
+        self.next_gps_index = 1
         self.data = ""
+        self.current_datapoints += 0
 
     def on_start(self):
         self._ecef_x = self.node.od["gps"]["skytraq_ecef_x"]
@@ -47,21 +40,28 @@ class MissionDatabaseService(Service):
         self._data_per_file = self.node.od["mdb"]["data_per_file"]
         self._max_num_files = self.node.od["mdb"]["max_num_files"]
 
-        self._node_mgr_service.enable("gps")
-
     def on_loop(self):
         # put everything in an array
         # if array is bigger than _data_per_file, store it in a file and clear it.
         # as queue updates, change the oresat configs.
         # don't order the beacon data. have a counter that determines what gets updated.
+
         if self.active.value:
             self.sleep(self._refresh_delay.value)
             return
 
+        if (
+            self._node_mgr_service.node_state("gps") is not NodeState.ON
+            and self._node_mgr_service.node_state("gps") is not NodeState.BOOTLOADER
+            and self._node_mgr_service.node_state("gps") is not NodeState.DEAD
+        ):
+            self._node_mgr_service.enable("gps")
+
         self._set_csv_gps()
         self._set_od_gps()
 
-        if len(self.data) > self._data_per_file.value:
+        if self.current_datapoints > self._data_per_file.value:
+            self.current_datapoints = 0
             self.update_files()
 
         self.sleep(self._refresh_delay.value)
@@ -83,6 +83,7 @@ class MissionDatabaseService(Service):
             self.node.fread_cache.remove(files[0])
 
     def _set_csv_gps(self):
+        self.current_datapoints += 1
         self.data += str(self._ecef_x.value) + ","
         self.data += str(self._ecef_y.value) + ","
         self.data += str(self._ecef_z.value) + ","
@@ -95,7 +96,7 @@ class MissionDatabaseService(Service):
         self.data += str(secondstime) + "\n"
 
     def _set_od_gps(self):
-        append = f"_{self.next_gps}"
+        append = f"_{self.next_gps_index}"
 
         self.node.od["hist_ecef_x"]["ecef_x" + append].value = self._ecef_x.value
         self.node.od["hist_ecef_y"]["ecef_y" + append].value = self._ecef_y.value
@@ -107,6 +108,6 @@ class MissionDatabaseService(Service):
         fulltime = self._scet.value.to_bytes(8, "little")
         secondstime = int.from_bytes(fulltime[:4], "little")
         self.node.od["hist_unix_time"]["time" + append].value = secondstime
-        self.next_gps += 1
-        if self.next_gps > 32:
-            self.next_gps = 1
+        self.next_gps_index += 1
+        if self.next_gps_index > 32:
+            self.next_gps_index = 1
