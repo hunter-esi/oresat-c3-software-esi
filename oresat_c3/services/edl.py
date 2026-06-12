@@ -142,6 +142,11 @@ class EdlService(Service):
             self._rejected_count &= 0xFF_FF_FF_FF
             logger.error(f"invalid EDL request packet: {e}")
             return None  # no responses to invalid packets
+        except SdlsInvalidHmacError as e:
+            self._rejected_count += 1
+            self._rejected_count &= 0xFF_FF_FF_FF
+            logger.error(f"invalid EDL request packet: {e}")
+            return None  # no responses to invalid packets
 
         if self._flight_mode and packet.seq_num < self._sequence_count:
             logger.error(
