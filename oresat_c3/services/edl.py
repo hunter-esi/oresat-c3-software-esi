@@ -695,7 +695,8 @@ class EdlFileReciever(CfdpUserBase):
                 elif isinstance(response, PutRequest):
                     put = response
             # Ignore non-reserved messages for now
-        self.scheduled_requests.put(put)
+        if put is not None:
+            self.scheduled_requests.put(put)
 
     def file_segment_recv_indication(self, params: FileSegmentRecvdParams):
         logger.info(f"Indication: File Segment Recv. {params}")
