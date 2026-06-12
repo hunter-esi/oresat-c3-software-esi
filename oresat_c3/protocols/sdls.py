@@ -11,6 +11,7 @@ SEQ_NUM_LEN = 4
 class SdlsInvalidHmacError(Exception):
     pass
 
+
 def gen_hmac(hmac_key: bytes, message: bytes) -> bytes:
     """Helper function to generate HMAC value from HMAC key and the message."""
 

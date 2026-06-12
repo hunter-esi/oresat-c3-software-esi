@@ -1,25 +1,24 @@
 """
-This class should eventually be used to define a mission database. For now, it will be used to define GPS information.
+This class should eventually be used to define a mission database. For now, it will be used to
+define GPS information.
 """
 
 from os.path import abspath
-from time import time
-import canopen
+
 from olaf import Service, logger, new_oresat_file
 
 from .node_manager import NodeManagerService
 
+
 class MissionDatabaseService(Service):
     """Mission Database Service"""
 
-    def __init__(
-        self,
-        node_mgr_service: NodeManagerService
-    ):
+    def __init__(self, node_mgr_service: NodeManagerService):
         super().__init__()
         self._node_mgr_service = node_mgr_service
 
-        # This should eventually be defined by something in oresat configs. For now will be hardcoded.
+        # This should eventually be defined by something in oresat configs.
+        # For now will be hardcoded.
         self._scet_seconds_int = 0
         self._gps_pos_x = 0
         self._gps_pos_y = 0
@@ -55,13 +54,13 @@ class MissionDatabaseService(Service):
         # if array is bigger than _data_per_file, store it in a file and clear it.
         # as queue updates, change the oresat configs.
         # don't order the beacon data. have a counter that determines what gets updated.
-        if self.active.value != True:
+        if self.active.value:
             self.sleep(self._refresh_delay.value)
             return
 
         self._set_csv_gps()
         self._set_od_gps()
-        
+
         if len(self.data) > self._data_per_file.value:
             self.update_files()
 
@@ -73,10 +72,10 @@ class MissionDatabaseService(Service):
         logger.error(f"Making file {new_file_name}")
         with open(new_file_path, "w") as f:
             f.write(self.data)
-        
+
         self.node.fread_cache.add(new_file_path, True)
         self.data = ""
-        
+
         files = self.node.fread_cache.files("gps-data")
         if len(files) > self._max_num_files.value:
             files = sorted(files)
@@ -84,7 +83,6 @@ class MissionDatabaseService(Service):
             self.node.fread_cache.remove(files[0])
 
     def _set_csv_gps(self):
-        """The way that I've set this up requests the values over the CANbus twice. Bad. Don't do that."""
         self.data += str(self._ecef_x.value) + ","
         self.data += str(self._ecef_y.value) + ","
         self.data += str(self._ecef_z.value) + ","

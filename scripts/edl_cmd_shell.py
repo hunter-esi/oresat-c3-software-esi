@@ -15,8 +15,6 @@ from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
 
 from oresat_c3.protocols.uslp import unpack_frame
 
-from oresat_c3.protocols.uslp import unpack_frame
-
 sys.path.insert(0, os.path.abspath(".."))
 
 from oresat_c3.protocols.edl_command import EDL_COMMANDS, EdlCommandCode, EdlCommandRequest
