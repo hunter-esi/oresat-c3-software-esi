@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from oresat_c3.services.node_flasher import (
     FLASH_STATUS_OK,
+    PROGRAM_CTRL_ZEPHYR_CONFIRM,
     NodeFlasherService,
 )
 
@@ -52,6 +53,7 @@ class TestNodeFlasherService(unittest.TestCase):
             node_mgr=self.mock_node_mgr,
             throttle_delay=0.0,
             request_crc=False,
+            confirm_image=False,
         )
 
         self.service.node = MagicMock()
@@ -72,12 +74,14 @@ class TestNodeFlasherService(unittest.TestCase):
                 "filename": "fw.bin",
                 "throttle_delay": 0.5,
                 "block_transfer": True,
+                "request_crc": True,
+                "confirm_image": True,
             }
         )
 
         self.service.on_loop()
 
-        mock_execute.assert_called_once_with(TEST_NODE_ID, "fw.bin", 0.5, True)
+        mock_execute.assert_called_once_with(TEST_NODE_ID, "fw.bin", 0.5, True, True, True)
 
     @patch.object(NodeFlasherService, "_execute_flash")
     def test_on_loop_empty(self, mock_execute):
@@ -94,14 +98,20 @@ class TestNodeFlasherService(unittest.TestCase):
         self.assertEqual(cmd["filename"], "fw1.bin")
         self.assertEqual(cmd["throttle_delay"], 0.0)
         self.assertEqual(cmd["block_transfer"], True)
+        self.assertEqual(cmd["request_crc"], False)
+        self.assertEqual(cmd["confirm_image"], False)
 
         # Test overrides
-        self.service.enqueue_flash(0x7C, "fw2.bin", throttle_delay=0.05, block_transfer=False)
+        self.service.enqueue_flash(
+            0x7C, "fw2.bin", throttle_delay=0.05, block_transfer=False, request_crc=True, confirm_image=True
+        )
         cmd = self.service.command_queue.get(timeout=1.0)
         self.assertEqual(cmd["node_id"], 0x7C)
         self.assertEqual(cmd["filename"], "fw2.bin")
         self.assertEqual(cmd["throttle_delay"], 0.05)
         self.assertEqual(cmd["block_transfer"], False)
+        self.assertEqual(cmd["request_crc"], True)
+        self.assertEqual(cmd["confirm_image"], True)
 
     @patch("oresat_c3.services.node_flasher.time.sleep")
     def test_execute_flash_success(self, mock_sleep):
@@ -113,10 +123,11 @@ class TestNodeFlasherService(unittest.TestCase):
         self.mock_data_sdo.open.return_value = mock_outfile
 
         self.service._execute_flash(
-            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True
+            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=True, confirm_image=True
         )
 
         self.mock_node_mgr.set_node_updating.assert_any_call(TEST_NODE_ID, True)
+        
         self.assertEqual(self.mock_target_node.nmt.state, "PRE-OPERATIONAL")
 
         # Assert SDO operations
@@ -125,11 +136,13 @@ class TestNodeFlasherService(unittest.TestCase):
             buffering=self.service.download_buffer_size,
             size=len(DUMMY_FIRMWARE_DATA),
             block_transfer=True,
-            request_crc_support=False,
+            request_crc_support=True,
         )
         mock_outfile.write.assert_called_once_with(DUMMY_FIRMWARE_DATA)
         self.mock_target_node.nmt.wait_for_bootup.assert_called_once()
         self.mock_node_mgr.set_node_updating.assert_called_with(TEST_NODE_ID, False)
+        
+        self.assertEqual(self.mock_ctrl_sdo.raw, PROGRAM_CTRL_ZEPHYR_CONFIRM)
 
         # Ensure file was cleaned up
         self.assertFalse(os.path.exists(self.test_filepath))
@@ -142,7 +155,7 @@ class TestNodeFlasherService(unittest.TestCase):
         original_send = self.service.node.network._network.bus.send
 
         self.service._execute_flash(
-            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.1, block_transfer=True
+            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.1, block_transfer=True, request_crc=False, confirm_image=False
         )
 
         self.assertEqual(self.service.node.network._network.bus.send, original_send)
@@ -151,19 +164,23 @@ class TestNodeFlasherService(unittest.TestCase):
     def test_execute_flash_file_not_found(self):
         """Test when file is missing."""
         self.service._execute_flash(
-            TEST_NODE_ID, "missing.bin", throttle_delay=0.0, block_transfer=True
+            TEST_NODE_ID, "missing.bin", throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
         )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
     def test_execute_flash_invalid_node(self):
         """Test when node ID is invalid or not in network."""
         # Unmapped node ID
-        self.service._execute_flash(0x9999, TEST_FILENAME, throttle_delay=0.0, block_transfer=True)
+        self.service._execute_flash(
+            0x9999, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
+        )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
         # Node mapped but not in remote_nodes
         self.mock_node_mgr.node_id_to_name[0x98] = "weird_node"
-        self.service._execute_flash(0x98, TEST_FILENAME, throttle_delay=0.0, block_transfer=True)
+        self.service._execute_flash(
+            0x98, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
+        )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
     @patch("oresat_c3.services.node_flasher.time.sleep")
@@ -176,7 +193,7 @@ class TestNodeFlasherService(unittest.TestCase):
         self.service.status_timeout = 0.1
 
         self.service._execute_flash(
-            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True
+            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
         )
 
         self.mock_node_mgr.set_node_updating.assert_called_with(TEST_NODE_ID, False)

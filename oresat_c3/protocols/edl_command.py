@@ -311,6 +311,10 @@ class EdlCommandCode(IntEnum):
         Delay between packets (default: 0.0).
     block_transfer: bool, optional
         True for block download, False for segmented (default: True).
+    request_crc: bool, optional
+        True to request a CRC check of the block download payload (default: False).
+    confirm_image: bool, optional
+        True to issue a command to confirm the zephyr image on next boot (default: False).
 
     Returns
     -------
@@ -350,16 +354,18 @@ def _edl_req_node_flash_pack_cb(values: tuple) -> bytes:
     filename = values[1]
     throttle_delay = values[2] if len(values) > 2 else 0.0
     block_transfer = values[3] if len(values) > 3 else True
-    req = struct.pack("<Bf?", node_id, throttle_delay, block_transfer)
+    request_crc = values[4] if len(values) > 4 else False
+    confirm_image = values[5] if len(values) > 5 else False
+    req = struct.pack("<Bf???", node_id, throttle_delay, block_transfer, request_crc, confirm_image)
     return req + filename.encode("utf-8")
 
 
 def _edl_req_node_flash_unpack_cb(raw: bytes) -> tuple:
-    fmt = "<Bf?"
+    fmt = "<Bf???"
     size = struct.calcsize(fmt)
-    node_id, throttle_delay, block_transfer = struct.unpack(fmt, raw[:size])
+    node_id, throttle_delay, block_transfer, request_crc, confirm_image = struct.unpack(fmt, raw[:size])
     filename = raw[size:].decode("utf-8").rstrip("\x00")
-    return (node_id, filename, throttle_delay, block_transfer)
+    return (node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image)
 
 
 EDL_COMMANDS = {

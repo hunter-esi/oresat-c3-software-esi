@@ -362,14 +362,15 @@ class EdlService(Service):
                 ecode = e.code
             ret = (node_id, index, subindex, ecode, len(data), data)
         elif request.code == EdlCommandCode.CO_NODE_FLASH:
-            node_id, filename, throttle_delay, block_transfer = request.args
+            node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image = request.args
             logger.info(
                 f"EDL queuing node flash for node 0x{node_id:02X} with file {filename} "
-                f"(throttle: {throttle_delay}, block: {block_transfer})"
+                f"(throttle: {throttle_delay}, block: {block_transfer}, crc: {request_crc}, confirm: {confirm_image})"
             )
             try:
                 self._node_flasher_service.enqueue_flash(
-                    node_id, filename, throttle_delay=throttle_delay, block_transfer=block_transfer
+                    node_id, filename, throttle_delay=throttle_delay, block_transfer=block_transfer,
+                    request_crc=request_crc, confirm_image=confirm_image
                 )
                 ret = True
             except Exception as e:
