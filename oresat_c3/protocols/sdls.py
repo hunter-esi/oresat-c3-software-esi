@@ -45,8 +45,6 @@ class SdlsOresat(SdlsEmpty):
 
         sdls_header = bytearray(b"\x00\x01") + seq_num.to_bytes(SEQ_NUM_LEN, "big")
 
-        print(sdls_header)
-
         frame.insert_zone = sdls_header
 
         authenticated_data = frame.header.pack() + sdls_header + frame.tfdf.pack()
