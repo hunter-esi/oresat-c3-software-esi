@@ -436,13 +436,21 @@ class EdlCommandShell(Cmd):
 
     def help_node_flash(self):
         """Print help message for node_flash command."""
-        print("node_flash <node> <filename> [throttle_delay] [block_transfer] [request_crc] [confirm_image]")
+        print(
+            "node_flash <node> <filename>"
+            "[throttle_delay] [block_transfer] [request_crc] [confirm_image]"
+        )
         print("  <node> is the node id (e.g. 0x7C or 42) or node name")
         print("  <filename> is the name of the bin file in the C3 cache to flash")
         print("  [throttle_delay] is an optional delay between packets in seconds (default: 0.0)")
         print("  [block_transfer] is optional (true/false, 1/0) for block download (default: true)")
-        print("  [request_crc] is optional (true/false, 1/0) to request a CRC check (default: false)")
-        print("  [confirm_image] is optional (true/false, 1/0) to confirm the image on boot (default: false)")
+        print(
+            "  [request_crc] is optional (true/false, 1/0) to request a CRC check (default: true)"
+        )
+        print(
+            "  [confirm_image] is optional (true/false, 1/0) to confirm the image on boot "
+            "(default: false)"
+        )
 
     def do_node_flash(self, arg: str):
         """Do the node_flash command."""
@@ -488,7 +496,7 @@ class EdlCommandShell(Cmd):
             else:
                 print("invalid block_transfer arg. Must be true/false or 1/0.")
                 return
-                
+
         if len(args) >= 5:
             arg4 = args[4].lower()
             if arg4 in ["true", "1", "t", "y", "yes"]:
@@ -498,7 +506,7 @@ class EdlCommandShell(Cmd):
             else:
                 print("invalid request_crc arg. Must be true/false or 1/0.")
                 return
-                
+
         if len(args) >= 6:
             arg5 = args[5].lower()
             if arg5 in ["true", "1", "t", "y", "yes"]:
@@ -510,7 +518,8 @@ class EdlCommandShell(Cmd):
                 return
 
         response = self._send_packet(
-            EdlCommandCode.CO_NODE_FLASH, (node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image)
+            EdlCommandCode.CO_NODE_FLASH,
+            (node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image),
         )
         if response is not None:
             print(f"Flash command sent. Response: {response}")

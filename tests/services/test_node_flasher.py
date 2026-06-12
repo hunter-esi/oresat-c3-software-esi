@@ -103,7 +103,12 @@ class TestNodeFlasherService(unittest.TestCase):
 
         # Test overrides
         self.service.enqueue_flash(
-            0x7C, "fw2.bin", throttle_delay=0.05, block_transfer=False, request_crc=True, confirm_image=True
+            0x7C,
+            "fw2.bin",
+            throttle_delay=0.05,
+            block_transfer=False,
+            request_crc=True,
+            confirm_image=True,
         )
         cmd = self.service.command_queue.get(timeout=1.0)
         self.assertEqual(cmd["node_id"], 0x7C)
@@ -123,11 +128,16 @@ class TestNodeFlasherService(unittest.TestCase):
         self.mock_data_sdo.open.return_value = mock_outfile
 
         self.service._execute_flash(
-            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=True, confirm_image=True
+            TEST_NODE_ID,
+            TEST_FILENAME,
+            throttle_delay=0.0,
+            block_transfer=True,
+            request_crc=True,
+            confirm_image=True,
         )
 
         self.mock_node_mgr.set_node_updating.assert_any_call(TEST_NODE_ID, True)
-        
+
         self.assertEqual(self.mock_target_node.nmt.state, "PRE-OPERATIONAL")
 
         # Assert SDO operations
@@ -141,7 +151,7 @@ class TestNodeFlasherService(unittest.TestCase):
         mock_outfile.write.assert_called_once_with(DUMMY_FIRMWARE_DATA)
         self.mock_target_node.nmt.wait_for_bootup.assert_called_once()
         self.mock_node_mgr.set_node_updating.assert_called_with(TEST_NODE_ID, False)
-        
+
         self.assertEqual(self.mock_ctrl_sdo.raw, PROGRAM_CTRL_ZEPHYR_CONFIRM)
 
         # Ensure file was cleaned up
@@ -155,7 +165,12 @@ class TestNodeFlasherService(unittest.TestCase):
         original_send = self.service.node.network._network.bus.send
 
         self.service._execute_flash(
-            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.1, block_transfer=True, request_crc=False, confirm_image=False
+            TEST_NODE_ID,
+            TEST_FILENAME,
+            throttle_delay=0.1,
+            block_transfer=True,
+            request_crc=False,
+            confirm_image=False,
         )
 
         self.assertEqual(self.service.node.network._network.bus.send, original_send)
@@ -164,7 +179,12 @@ class TestNodeFlasherService(unittest.TestCase):
     def test_execute_flash_file_not_found(self):
         """Test when file is missing."""
         self.service._execute_flash(
-            TEST_NODE_ID, "missing.bin", throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
+            TEST_NODE_ID,
+            "missing.bin",
+            throttle_delay=0.0,
+            block_transfer=True,
+            request_crc=False,
+            confirm_image=False,
         )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
@@ -172,14 +192,24 @@ class TestNodeFlasherService(unittest.TestCase):
         """Test when node ID is invalid or not in network."""
         # Unmapped node ID
         self.service._execute_flash(
-            0x9999, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
+            0x9999,
+            TEST_FILENAME,
+            throttle_delay=0.0,
+            block_transfer=True,
+            request_crc=False,
+            confirm_image=False,
         )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
         # Node mapped but not in remote_nodes
         self.mock_node_mgr.node_id_to_name[0x98] = "weird_node"
         self.service._execute_flash(
-            0x98, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
+            0x98,
+            TEST_FILENAME,
+            throttle_delay=0.0,
+            block_transfer=True,
+            request_crc=False,
+            confirm_image=False,
         )
         self.mock_node_mgr.set_node_updating.assert_not_called()
 
@@ -193,7 +223,12 @@ class TestNodeFlasherService(unittest.TestCase):
         self.service.status_timeout = 0.1
 
         self.service._execute_flash(
-            TEST_NODE_ID, TEST_FILENAME, throttle_delay=0.0, block_transfer=True, request_crc=False, confirm_image=False
+            TEST_NODE_ID,
+            TEST_FILENAME,
+            throttle_delay=0.0,
+            block_transfer=True,
+            request_crc=False,
+            confirm_image=False,
         )
 
         self.mock_node_mgr.set_node_updating.assert_called_with(TEST_NODE_ID, False)

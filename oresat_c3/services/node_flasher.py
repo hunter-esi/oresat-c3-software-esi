@@ -36,10 +36,11 @@ class NodeFlasherService(Service):
         cache_dir: str,
         node_mgr,
         throttle_delay: float = 0.0,
-        # request_crc defaults to False due to a possible CRC calculation mismatch in
-        # Zephyr's CANopenNode integration (depends on versioning). This is safe because
-        # MCUboot checks hash signatures of the firmware image before booting.
-        request_crc: bool = False,
+        # request_crc used to fail, possibly due to a CRC calculation mismatch
+        # between python-canopen and Zephyr's CANopenNode integration. If
+        # request_crc is false, the transfer still safe because MCUboot checks
+        # hash signatures of the firmware image before booting.
+        request_crc: bool = True,
         confirm_image: bool = False,
         sdo_timeout: float = 3.0,
         sdo_retries: int = 3,
@@ -98,9 +99,9 @@ class NodeFlasherService(Service):
         try:
             cmd = self.command_queue.get(timeout=QUEUE_GET_TIMEOUT)
             self._execute_flash(
-                cmd["node_id"], 
-                cmd["filename"], 
-                cmd["throttle_delay"], 
+                cmd["node_id"],
+                cmd["filename"],
+                cmd["throttle_delay"],
                 cmd["block_transfer"],
                 cmd["request_crc"],
                 cmd["confirm_image"],
@@ -119,10 +120,10 @@ class NodeFlasherService(Service):
         return status
 
     def _execute_flash(
-        self, 
-        node_id: int, 
-        filename: str, 
-        throttle_delay: float, 
+        self,
+        node_id: int,
+        filename: str,
+        throttle_delay: float,
         block_transfer: bool,
         request_crc: bool,
         confirm_image: bool,
