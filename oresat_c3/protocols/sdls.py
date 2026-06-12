@@ -43,7 +43,9 @@ class SdlsOresat(SdlsEmpty):
         if hmac_key is None:
             raise ValueError("hmac_key should not be none if using VCID with Oresat SDLS SPI.")
 
-        sdls_header = bytearray(b"\x00\x01") + seq_num.to_bytes(SEQ_NUM_LEN, "little")
+        sdls_header = bytearray(b"\x00\x01") + seq_num.to_bytes(SEQ_NUM_LEN, "big")
+
+        print(sdls_header)
 
         frame.insert_zone = sdls_header
 
