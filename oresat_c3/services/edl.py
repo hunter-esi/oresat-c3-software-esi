@@ -683,7 +683,6 @@ class EdlFileReciever(CfdpUserBase):
             if r := msg.to_reserved_msg_tlv():  # is None if not a reserved TLV message
                 op = r.get_cfdp_proxy_message_type()  # interim. Replace with Theo's code.
                 if op is None:
-                    logger.error(put)
                     op = r.get_directory_operation_type()
                 response = self.proxy_responses[op](params.source_id, params.transaction_id, r)
                 if put is not None and response is PutRequest:
