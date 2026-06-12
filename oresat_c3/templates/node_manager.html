@@ -131,7 +131,7 @@
             let opt = document.createElement('option');
             opt.value = value;
             opt.innerHTML = key;
-            if (key == "BOOTLOADER" && status.processor != "stm32") {
+            if (key == "BOOTLOADER" && !(["stm32", "mcxn"].includes(status.processor))) {
               opt.style.display = "none";
             }
             select.appendChild(opt);

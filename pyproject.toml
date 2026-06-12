@@ -7,9 +7,8 @@ name = "oresat-c3"
 description = "OreSat C3 OLAF app"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "GPL-3.0"}
+license = "GPL-3.0-or-later"
 classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -17,23 +16,33 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Topic :: Software Development :: Embedded Systems",
 ]
+dynamic = ["version"]
+
 dependencies = [
     "bitstring",
     "cfdp-py~=0.6.0",
     "dataclasses-json",
+    "gpiod",
     "fastcrc~=0.3",
-    "oresat-configs==0.8.*",
-    "oresat-olaf>=3.6.5",
+    "oresat-configs>=1.1.2",
+    "oresat-olaf>=3.7.2",
     "smbus2",
     "spacepackets>=0.30.1",
+    "ccsds-cop>=0.0.0",
 ]
-dynamic = ["version"]
+
+[dependency-groups]
+dev = [
+    "build",
+    "pylama[all,toml]",
+    "ruff",
+    "sphinx",
+    "sphinx-rtd-theme",
+    "sphinxcontrib-mermaid",
+]
 
 [project.scripts]
 oresat-c3 = "oresat_c3.__main__:main"
-
-[tool.setuptools.dynamic]
-version = {attr = "oresat_c3.__version__"}
 
 [tool.setuptools.packages.find]
 exclude = ["docs*", "tests*", "scripts*"]
@@ -44,8 +53,23 @@ exclude = ["docs*", "tests*", "scripts*"]
 [tool.setuptools_scm]
 write_to = "oresat_c3/_version.py"
 
-[tool.black]
-line_length = 100
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "C4",
+    "E",
+    "F",
+    "I",
+    "PERF",
+    "RUF",
+    "W",
+]
 
 [tool.pylama]
 format = "pylint"
@@ -90,7 +114,3 @@ ignore = "W0212"
 [[tool.mypy.overrides]]
 module = "canopen,olaf,oresat_configs,spacepackets"
 ignore_missing_imports = true
-
-[tool.isort]
-profile = "black"
-line_length = 100

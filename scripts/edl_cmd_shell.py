@@ -11,13 +11,16 @@ from typing import Any, Union
 
 import canopen
 from oresat_configs import Mission, OreSatConfig
+from spacepackets.uslp.defs import UslpInvalidRawPacketOrFrameLenError
+
+from oresat_c3.protocols.uslp import unpack_frame
 
 from oresat_c3.protocols.uslp import unpack_frame
 
 sys.path.insert(0, os.path.abspath(".."))
 
 from oresat_c3.protocols.edl_command import EDL_COMMANDS, EdlCommandCode, EdlCommandRequest
-from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket
+from oresat_c3.protocols.edl_packet import SRC_DEST_ORESAT, EdlPacket, EdlVcid
 
 
 class EdlCommandShell(Cmd):
@@ -54,7 +57,7 @@ class EdlCommandShell(Cmd):
         try:
             # make packet
             req = EdlCommandRequest(code, args)
-            req_packet = EdlPacket(req, self._seq_num, SRC_DEST_ORESAT)
+            req_packet = EdlPacket(req, self._seq_num, SRC_DEST_ORESAT, bypass=True)
             req_packet_raw = req_packet.pack(self._hmac_key)
 
             # send request
@@ -62,15 +65,21 @@ class EdlCommandShell(Cmd):
 
             edl_command = EDL_COMMANDS[code]
             if edl_command.res_fmt is not None or edl_command.res_unpack_func is not None:
-                # recv response
-                res_packet_raw = self._downlink_socket.recv(1024)
-                # parse respone
-                frame = unpack_frame(res_packet_raw)
-                res_packet = EdlPacket.unpack(frame, self._hmac_key)
+                for _ in range(10):
+                    res_packet_raw = self._downlink_socket.recv(1024)
+                    try:
+                        frame = unpack_frame(res_packet_raw)
+                    except UslpInvalidRawPacketOrFrameLenError:
+                        continue
+                    if frame.header.vcid == EdlVcid.C3_COMMAND:
+                        break
+                else:
+                    raise TimeoutError("No C3_COMMAND response received after 10 attempts")
+                res_packet = EdlPacket.from_frame(frame, self._hmac_key)
             self._seq_num += 1
         except Exception as e:  # pylint: disable=W0718
             print(e)
-            return tuple()
+            return ()
 
         ret = None
         if res_packet and res_packet.payload.values:
@@ -426,6 +435,63 @@ class EdlCommandShell(Cmd):
             value = int(arg0)
 
         self._send_packet(EdlCommandCode.RTC_SET_TIME, (value,))
+
+    def help_node_flash(self):
+        """Print help message for node_flash command."""
+        print("node_flash <node> <filename> [throttle_delay] [block_transfer]")
+        print("  <node> is the node id (e.g. 0x7C or 42) or node name")
+        print("  <filename> is the name of the bin file in the C3 cache to flash")
+        print("  [throttle_delay] is an optional delay between packets in seconds (default: 0.0)")
+        print("  [block_transfer] is optional (true/false, 1/0) for block download (default: true)")
+
+    def do_node_flash(self, arg: str):
+        """Do the node_flash command."""
+
+        args = arg.split()
+        if len(args) < 2 or len(args) > 4:
+            self.help_node_flash()
+            return
+
+        node_id = None
+
+        if args[0].startswith("0x"):
+            node_id = int(args[0], 16)
+        elif args[0] in self.configs.cards:
+            node_id = self.configs.cards[args[0]].node_id
+        else:
+            try:
+                node_id = int(args[0])
+            except ValueError:
+                print("invalid node arg. Must be hex, int, or valid card name.")
+                return
+
+        filename = args[1]
+
+        throttle_delay = 0.0
+        block_transfer = True
+
+        if len(args) >= 3:
+            try:
+                throttle_delay = float(args[2])
+            except ValueError:
+                print("invalid throttle_delay arg. Must be a float.")
+                return
+
+        if len(args) >= 4:
+            arg3 = args[3].lower()
+            if arg3 in ["true", "1"]:
+                block_transfer = True
+            elif arg3 in ["false", "0"]:
+                block_transfer = False
+            else:
+                print("invalid block_transfer arg. Must be true/false or 1/0.")
+                return
+
+        response = self._send_packet(
+            EdlCommandCode.CO_NODE_FLASH, (node_id, filename, throttle_delay, block_transfer)
+        )
+        if response is not None:
+            print(f"Flash command sent. Response: {response}")
 
 
 def main():

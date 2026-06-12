@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+# ruff: noqa: RUF001 - we use a fancy x for display
 """Listens for and prints C3 beacons"""
-
 
 import os
 import socket
