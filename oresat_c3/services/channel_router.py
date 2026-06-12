@@ -11,6 +11,7 @@ from spacepackets.uslp.defs import UslpChecksumError
 from spacepackets.uslp.frame import FrameType
 from spacepackets.uslp.header import SourceOrDestField
 
+from .. import C3State
 from ..protocols.edl_packet import EdlVcid
 from ..protocols.uslp import make_frame, unpack_frame
 from .cop_manager import CopManagerService
@@ -43,17 +44,20 @@ class ChannelRouterService(Service):
                 except Empty:  # noqa: PERF203
                     break
 
-        now = monotonic()
-        if now - self._last_clcw_time >= self._CLCW_INTERVAL:
-            for clcw in self._get_all_clcw():
-                frame = make_frame(
-                    payload=bytes(1),
-                    vcid=EdlVcid.IDLE,
-                    src_dest=SourceOrDestField.SOURCE,
-                    control_word=clcw.pack(),
-                )
-                self._radios_service.send_edl_response(frame.pack(frame_type=FrameType.VARIABLE))
-            self._last_clcw_time = now
+        if self.node.od["status"].value == C3State.EDL:
+            now = monotonic()
+            if now - self._last_clcw_time >= self._CLCW_INTERVAL:
+                for clcw in self._get_all_clcw():
+                    frame = make_frame(
+                        payload=bytes(1),
+                        vcid=EdlVcid.IDLE,
+                        src_dest=SourceOrDestField.SOURCE,
+                        control_word=clcw.pack(),
+                    )
+                    self._radios_service.send_edl_response(
+                        frame.pack(frame_type=FrameType.VARIABLE)
+                    )
+                self._last_clcw_time = now
 
         try:
             message = self._radios_service.recv_queue.get(timeout=0.1)
