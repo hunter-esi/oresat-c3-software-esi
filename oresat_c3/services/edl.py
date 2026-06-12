@@ -205,9 +205,6 @@ class EdlService(Service):
         else:
             res_payload = self._file_receiver.loop(req_packet.payload)
 
-        if res_payload is None:
-            return
-
         for payload in res_payload:
             self._respond(EdlVcid.FILE_TRANSFER, payload)
 
@@ -562,15 +559,18 @@ class EdlFileReciever(CfdpUserBase):
             logger.exception(f"Failed to update state machine: {e}")
             self.dest.reset()
             self.source.reset()
+        # It would seem natural to use dest.packets_ready but the count seems to get desynced from
+        # the contents of the packet queue. get_next_packet operates on the queue directly and
+        # reutrns None when it's out of packets. FIXME: Upstream bug?
         pdus = []
-        while self.dest.packets_ready:
-            pdus.append(self.dest.get_next_packet().pdu)
-        while self.source.packets_ready:
-            pdus.append(self.source.get_next_packet().pdu)
+        while (packet := self.dest.get_next_packet()) is not None:
+            pdus.append(packet.pdu)
+        while (packet := self.source.get_next_packet()) is not None:
+            pdus.append(packet.pdu)
 
         for out in pdus:
             logger.info(f"---> {out}")
-        return pdus or None
+        return pdus
 
     def unimplemented(self, _source, _tid, _reserved_message) -> PutRequest:
         """Default method for responding to unimplemented requests"""
@@ -681,7 +681,8 @@ class EdlFileReciever(CfdpUserBase):
         put = None
         for msg in params.msgs_to_user or []:
             if r := msg.to_reserved_msg_tlv():  # is None if not a reserved TLV message
-                op = r.get_cfdp_proxy_message_type()  # interim. Replace with Theo's code.
+                # cfdp_proxy_message_type can be 0
+                op = r.get_cfdp_proxy_message_type()
                 if op is None:
                     op = r.get_directory_operation_type()
                 response = self.proxy_responses[op](params.source_id, params.transaction_id, r)
