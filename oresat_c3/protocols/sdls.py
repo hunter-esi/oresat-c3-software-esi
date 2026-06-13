@@ -43,7 +43,7 @@ class SdlsOresat(SdlsEmpty):
         if hmac_key is None:
             raise ValueError("hmac_key should not be none if using VCID with Oresat SDLS SPI.")
 
-        sdls_header = bytearray(b"\x00\x01") + seq_num.to_bytes(SEQ_NUM_LEN, "little")
+        sdls_header = bytearray(b"\x00\x01") + seq_num.to_bytes(SEQ_NUM_LEN, "big")
 
         frame.insert_zone = sdls_header
 
@@ -69,8 +69,6 @@ class SdlsOresat(SdlsEmpty):
 
         header_mask = bytearray(b"\x00\x00\x07\xfe\x00\x00\x00")
         header_mask += bytearray(bytes(frame.header.vcf_count_len))
-        for i in range(frame.header.vcf_count):
-            header_mask += 0x00
         for i in range(len(header_mask)):
             authenticated_data[i] = authenticated_data[i] & header_mask[i]
 
@@ -83,7 +81,7 @@ class SdlsOresat(SdlsEmpty):
                 f"Frame with invalid HMAC received expected: {hmac_expected}, Actual: {hmac_actual}"
             )
 
-        sequence_number = int.from_bytes(sdls_header[2:], byteorder="little")
+        sequence_number = int.from_bytes(sdls_header[2:], byteorder="big")
         return sequence_number
 
 
