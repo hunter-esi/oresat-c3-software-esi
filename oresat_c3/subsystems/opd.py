@@ -265,6 +265,7 @@ class OpdNode:
 
 class OpdStm32Node(OpdNode):
     """A STM32-based OPD Node"""
+
     _I2C_SCL_PIN = 0  # i2c bootloader
     _I2C_SDA_PIN = 1  # i2c bootloader
     _BOOT_PIN = 5  # bootloader
