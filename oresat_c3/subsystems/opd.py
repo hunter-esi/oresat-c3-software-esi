@@ -269,8 +269,8 @@ class OpdStm32Node(OpdNode):
     _I2C_SDA_PIN = 1  # i2c bootloader
     _BOOT_PIN = 5  # bootloader
     _UART_PIN = 7  # connect to C3 UART
-    _BOOTLOADER_LIVE_INPUTS = 1 << _I2C_SCL_PIN | 1 << _I2C_SDA_PIN | 1 << OpdNode._NOT_FAULT_PIN
-    _BOOTLOADER_SAFED_INPUTS = _BOOTLOADER_LIVE_INPUTS | 1 << _BOOT_PIN
+    _BOOTLOADER_ON_INPUTS = 1 << _I2C_SCL_PIN | 1 << _I2C_SDA_PIN | 1 << OpdNode._NOT_FAULT_PIN
+    _BOOTLOADER_OFF_INPUTS = _BOOTLOADER_ON_INPUTS | 1 << _BOOT_PIN
 
     def __init__(self, bus: int, name: str, addr: int, *, mock: bool = False) -> None:
         """
@@ -286,7 +286,7 @@ class OpdStm32Node(OpdNode):
             Mock the OPD subsystem.
         """
         super().__init__(bus, name, addr, mock=mock)
-        self._inputs = self._BOOTLOADER_SAFED_INPUTS
+        self._inputs = self._BOOTLOADER_OFF_INPUTS
 
     def enable(self, *, bootloader_mode: bool = False) -> OpdNodeState:
         """
@@ -305,11 +305,11 @@ class OpdStm32Node(OpdNode):
 
         try:
             if bootloader_mode:
-                self._max7310.configuration = self._BOOTLOADER_LIVE_INPUTS
+                self._max7310.configuration = self._BOOTLOADER_ON_INPUTS
                 self._max7310.output_set(self._BOOT_PIN)
             else:
                 self._max7310.output_clear(self._BOOT_PIN)
-                self._max7310.configuration = self._BOOTLOADER_SAFED_INPUTS
+                self._max7310.configuration = self._BOOTLOADER_OFF_INPUTS
         except Max7310Error:
             self._status = OpdNodeState.FAULT
             return self._status
@@ -327,7 +327,7 @@ class OpdStm32Node(OpdNode):
         """
         with suppress(Max7310Error):
             self._max7310.output_clear(self._BOOT_PIN)
-            self._max7310.configuration = self._BOOTLOADER_SAFED_INPUTS
+            self._max7310.configuration = self._BOOTLOADER_OFF_INPUTS
             # set it to an output
         return super().disable()
 
@@ -379,6 +379,8 @@ class OpdMcxnNode(OpdNode):
     _I2C_SDA_PIN = 1  # i2c bootloader
     _BOOT_PIN = 5  # bootloader
     _UART_PIN = 7  # connect to C3 UART
+    _BOOTLOADER_OFF_INPUTS = 1 << _I2C_SCL_PIN | 1 << _I2C_SDA_PIN | 1 << OpdNode._NOT_FAULT_PIN
+    _BOOTLOADER_ON_INPUTS = _BOOTLOADER_OFF_INPUTS | 1 << _BOOT_PIN
 
     def __init__(self, bus: int, name: str, addr: int, *, mock: bool = False) -> None:
         """
@@ -394,7 +396,7 @@ class OpdMcxnNode(OpdNode):
             Mock the OPD subsystem.
         """
         super().__init__(bus, name, addr, mock=mock)
-        self._inputs = 1 << self._I2C_SCL_PIN | 1 << self._I2C_SDA_PIN | 1 << self._NOT_FAULT_PIN
+        self._inputs = self._BOOTLOADER_OFF_INPUTS
 
     def enable(self, *, bootloader_mode: bool = False) -> OpdNodeState:
         """
@@ -414,7 +416,9 @@ class OpdMcxnNode(OpdNode):
         try:
             if bootloader_mode:
                 self._max7310.output_clear(self._BOOT_PIN)
+                self._max7310.configuration = self._BOOTLOADER_ON_INPUTS
             else:
+                self._max7310.configuration = self._BOOTLOADER_OFF_INPUTS
                 self._max7310.output_set(self._BOOT_PIN)
         except Max7310Error:
             self._status = OpdNodeState.FAULT
@@ -432,6 +436,7 @@ class OpdMcxnNode(OpdNode):
             The node state after disabling the node.
         """
         with suppress(Max7310Error):
+            self._max7310.configuration = self._BOOTLOADER_OFF_INPUTS
             self._max7310.output_set(self._BOOT_PIN)
         return super().disable()
 
