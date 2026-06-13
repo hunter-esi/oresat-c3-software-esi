@@ -18,6 +18,7 @@ H1F57_FLASH_STATUS = 0x1F57
 PROGRAM_CTRL_STOP = 0x00
 PROGRAM_CTRL_START = 0x01
 PROGRAM_CTRL_CLEAR = 0x03
+PROGRAM_CTRL_ZEPHYR_CONFIRM = 0x80
 
 DEFAULT_STATUS_TIMEOUT = 30.0
 DEFAULT_BOOTUP_TIMEOUT = 20.0
@@ -35,10 +36,12 @@ class NodeFlasherService(Service):
         cache_dir: str,
         node_mgr,
         throttle_delay: float = 0.0,
-        # request_crc defaults to False due to a possible CRC calculation mismatch in
-        # Zephyr's CANopenNode integration (depends on versioning). This is safe because
-        # MCUboot checks hash signatures of the firmware image before booting.
-        request_crc: bool = False,
+        # request_crc used to fail, possibly due to a CRC calculation mismatch
+        # between python-canopen and Zephyr's CANopenNode integration. If
+        # request_crc is false, the transfer still safe because MCUboot checks
+        # hash signatures of the firmware image before booting.
+        request_crc: bool = True,
+        confirm_image: bool = False,
         sdo_timeout: float = 3.0,
         sdo_retries: int = 3,
     ):
@@ -53,6 +56,7 @@ class NodeFlasherService(Service):
         self.block_transfer = True
         self.throttle_delay = throttle_delay
         self.request_crc = request_crc
+        self.confirm_image = confirm_image
         self.sdo_timeout = sdo_timeout
         self.sdo_retries = sdo_retries
 
@@ -62,12 +66,18 @@ class NodeFlasherService(Service):
         filename: str,
         throttle_delay: Optional[float] = None,
         block_transfer: Optional[bool] = None,
+        request_crc: Optional[bool] = None,
+        confirm_image: Optional[bool] = None,
     ):
         """Called by EdlService to trigger a flash."""
         if throttle_delay is None:
             throttle_delay = self.throttle_delay
         if block_transfer is None:
             block_transfer = self.block_transfer
+        if request_crc is None:
+            request_crc = self.request_crc
+        if confirm_image is None:
+            confirm_image = self.confirm_image
 
         self.command_queue.put(
             {
@@ -75,18 +85,26 @@ class NodeFlasherService(Service):
                 "filename": filename,
                 "throttle_delay": throttle_delay,
                 "block_transfer": block_transfer,
+                "request_crc": request_crc,
+                "confirm_image": confirm_image,
             }
         )
         logger.info(
             f"Queued flash for Node 0x{node_id:02X} with file {filename} "
-            f"(throttle_delay={throttle_delay}, block_transfer={block_transfer})"
+            f"(throttle_delay={throttle_delay}, block_transfer={block_transfer}, "
+            f"request_crc={request_crc}, confirm_image={confirm_image})"
         )
 
     def on_loop(self):
         try:
             cmd = self.command_queue.get(timeout=QUEUE_GET_TIMEOUT)
             self._execute_flash(
-                cmd["node_id"], cmd["filename"], cmd["throttle_delay"], cmd["block_transfer"]
+                cmd["node_id"],
+                cmd["filename"],
+                cmd["throttle_delay"],
+                cmd["block_transfer"],
+                cmd["request_crc"],
+                cmd["confirm_image"],
             )
         except Empty:
             pass
@@ -102,7 +120,13 @@ class NodeFlasherService(Service):
         return status
 
     def _execute_flash(
-        self, node_id: int, filename: str, throttle_delay: float, block_transfer: bool
+        self,
+        node_id: int,
+        filename: str,
+        throttle_delay: float,
+        block_transfer: bool,
+        request_crc: bool,
+        confirm_image: bool,
     ):
         filepath = os.path.join(self.cache_dir, filename)
 
@@ -169,7 +193,7 @@ class NodeFlasherService(Service):
                     buffering=self.download_buffer_size,
                     size=file_size,
                     block_transfer=block_transfer,
-                    request_crc_support=self.request_crc,
+                    request_crc_support=request_crc,
                 )
                 outfile.write(infile.read())
                 outfile.close()
@@ -182,6 +206,14 @@ class NodeFlasherService(Service):
             ctrl_sdo.raw = PROGRAM_CTRL_START
             target_node.nmt.wait_for_bootup(timeout=self.bootup_timeout)
             logger.info(f"Node {node_name} (0x{node_id:02X}) flashed and rebooted successfully.")
+
+            # Confirm the image if requested
+            if confirm_image:
+                logger.info(f"Confirming Zephyr image for node {node_name} (0x{node_id:02X})...")
+                target_node.nmt.state = "PRE-OPERATIONAL"
+                time.sleep(NMT_STATE_CHANGE_DELAY)
+                ctrl_sdo.raw = PROGRAM_CTRL_ZEPHYR_CONFIRM
+                logger.info("Zephyr image confirmed.")
 
         except Exception as e:
             logger.error(f"Node flasher failed during execution: {e}")
