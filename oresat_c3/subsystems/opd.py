@@ -265,6 +265,115 @@ class OpdNode:
 
 class OpdStm32Node(OpdNode):
     """A STM32-based OPD Node"""
+    _I2C_SCL_PIN = 0  # i2c bootloader
+    _I2C_SDA_PIN = 1  # i2c bootloader
+    _BOOT_PIN = 5  # bootloader
+    _UART_PIN = 7  # connect to C3 UART
+    _BOOTLOADER_LIVE_INPUTS = 1 << _I2C_SCL_PIN | 1 << _I2C_SDA_PIN | 1 << OpdNode._NOT_FAULT_PIN
+    _BOOTLOADER_SAFED_INPUTS = _BOOTLOADER_LIVE_INPUTS | 1 << _BOOT_PIN
+
+    def __init__(self, bus: int, name: str, addr: int, *, mock: bool = False) -> None:
+        """
+        Parameters
+        ----------
+        not_enable_pin: int
+            Pin that enable the OPD subsystem.
+        name: str
+            Name of OPD node.
+        bus: int
+            The I2C bus.
+        mock: bool
+            Mock the OPD subsystem.
+        """
+        super().__init__(bus, name, addr, mock=mock)
+        self._inputs = self._BOOTLOADER_SAFED_INPUTS
+
+    def enable(self, *, bootloader_mode: bool = False) -> OpdNodeState:
+        """
+        Enable the OPD node.
+
+        Parameters
+        ----------
+        bootloader_mode: bool
+            Boot into bootloader mode.
+
+        Returns
+        -------
+        OpdNodeState
+            The node state after disabling the node.
+        """
+
+        try:
+            if bootloader_mode:
+                self._max7310.configuration = self._BOOTLOADER_LIVE_INPUTS
+                self._max7310.output_set(self._BOOT_PIN)
+            else:
+                self._max7310.output_clear(self._BOOT_PIN)
+                self._max7310.configuration = self._BOOTLOADER_SAFED_INPUTS
+        except Max7310Error:
+            self._status = OpdNodeState.FAULT
+            return self._status
+
+        return super().enable()
+
+    def disable(self) -> OpdNodeState:
+        """
+        Disable the OPD node.
+
+        Returns
+        -------
+        OpdNodeState
+            The node state after disabling the node.
+        """
+        with suppress(Max7310Error):
+            self._max7310.output_clear(self._BOOT_PIN)
+            self._max7310.configuration = self._BOOTLOADER_SAFED_INPUTS
+            # set it to an output
+        return super().disable()
+
+    def enable_uart(self) -> None:
+        """Connect the node the C3's UART"""
+
+        try:
+            self._max7310.output_set(self._UART_PIN)
+            logger.debug(f"OPD node {self.name} (0x{self.addr:02X}) was connected to UART")
+        except Max7310Error:
+            self._status = OpdNodeState.FAULT
+
+    def disable_uart(self) -> None:
+        """Disconnect the node from the C3's UART"""
+
+        try:
+            self._max7310.output_clear(self._UART_PIN)
+            logger.debug(f"OPD node {self.name} (0x{self.addr:02X}) was disconnected from UART")
+        except Max7310Error:
+            self._status = OpdNodeState.FAULT
+
+    @property
+    def is_uart_enabled(self) -> bool:
+        """bool: Check if the UART pin is connected"""
+
+        r = False
+        try:
+            r = self._max7310.output_status(self._UART_PIN)
+        except Max7310Error:
+            self._status = OpdNodeState.FAULT
+        return r
+
+    @property
+    def in_bootloader_mode(self) -> bool:
+        """bool: Check if the card is in bootloader mode."""
+
+        r = False
+        try:
+            r = self._max7310.output_status(self._BOOT_PIN)
+        except Max7310Error:
+            self._status = OpdNodeState.FAULT
+        return r
+
+
+class OpdMcxnNode(OpdNode):
+    """A STM32-based OPD Node"""
 
     _I2C_SCL_PIN = 0  # i2c bootloader
     _I2C_SDA_PIN = 1  # i2c bootloader
@@ -304,9 +413,9 @@ class OpdStm32Node(OpdNode):
 
         try:
             if bootloader_mode:
-                self._max7310.output_set(self._BOOT_PIN)
-            else:
                 self._max7310.output_clear(self._BOOT_PIN)
+            else:
+                self._max7310.output_set(self._BOOT_PIN)
         except Max7310Error:
             self._status = OpdNodeState.FAULT
             return self._status
@@ -323,7 +432,7 @@ class OpdStm32Node(OpdNode):
             The node state after disabling the node.
         """
         with suppress(Max7310Error):
-            self._max7310.output_clear(self._BOOT_PIN)
+            self._max7310.output_set(self._BOOT_PIN)
         return super().disable()
 
     def enable_uart(self) -> None:
@@ -361,7 +470,7 @@ class OpdStm32Node(OpdNode):
 
         r = False
         try:
-            r = self._max7310.output_status(self._BOOT_PIN)
+            r = not self._max7310.output_status(self._BOOT_PIN)
         except Max7310Error:
             self._status = OpdNodeState.FAULT
         return r
@@ -485,7 +594,7 @@ class Opd:
         opd_type = {
             "none": OpdNode,
             "stm32": OpdStm32Node,
-            "mcxn": OpdStm32Node,
+            "mcxn": OpdMcxnNode,
             "octavo": OpdOctavoNode,
         }
 
