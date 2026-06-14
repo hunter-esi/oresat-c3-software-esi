@@ -57,6 +57,7 @@ class MissionDatabaseService(Service):
         ):
             self._node_mgr_service.enable("gps")
             self.sleep(self._refresh_delay.value)
+            return
 
         self._set_csv_gps()
         self._set_od_gps()
