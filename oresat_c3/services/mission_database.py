@@ -46,7 +46,7 @@ class MissionDatabaseService(Service):
         # as queue updates, change the oresat configs.
         # don't order the beacon data. have a counter that determines what gets updated.
 
-        if self.active.value:
+        if self.active.value is False:
             self.sleep(self._refresh_delay.value)
             return
 
