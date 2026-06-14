@@ -7,7 +7,7 @@ from os.path import abspath
 
 from olaf import Service, logger, new_oresat_file
 
-from .node_manager import NodeManagerService, NodeState
+from .node_manager import NodeManagerService
 
 
 class MissionDatabaseService(Service):
@@ -51,9 +51,9 @@ class MissionDatabaseService(Service):
             return
 
         if (
-            self._node_mgr_service.node_status("gps") is not NodeState.ON
-            and self._node_mgr_service.node_status("gps") is not NodeState.BOOTLOADER
-            and self._node_mgr_service.node_status("gps") is not NodeState.DEAD
+            self._node_mgr_service.node_status("gps") != 1  # On.
+            and self._node_mgr_service.node_status("gps") != 2  # Boot
+            and self._node_mgr_service.node_status("gps") != 0xFF  # Dead
         ):
             self._node_mgr_service.enable("gps")
             self.sleep(self._refresh_delay.value)
