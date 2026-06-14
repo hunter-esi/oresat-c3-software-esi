@@ -436,17 +436,27 @@ class EdlCommandShell(Cmd):
 
     def help_node_flash(self):
         """Print help message for node_flash command."""
-        print("node_flash <node> <filename> [throttle_delay] [block_transfer]")
+        print(
+            "node_flash <node> <filename>"
+            "[throttle_delay] [block_transfer] [request_crc] [confirm_image]"
+        )
         print("  <node> is the node id (e.g. 0x7C or 42) or node name")
         print("  <filename> is the name of the bin file in the C3 cache to flash")
         print("  [throttle_delay] is an optional delay between packets in seconds (default: 0.0)")
         print("  [block_transfer] is optional (true/false, 1/0) for block download (default: true)")
+        print(
+            "  [request_crc] is optional (true/false, 1/0) to request a CRC check (default: true)"
+        )
+        print(
+            "  [confirm_image] is optional (true/false, 1/0) to confirm the image on boot "
+            "(default: false)"
+        )
 
     def do_node_flash(self, arg: str):
         """Do the node_flash command."""
 
         args = arg.split()
-        if len(args) < 2 or len(args) > 4:
+        if len(args) < 2 or len(args) > 6:
             self.help_node_flash()
             return
 
@@ -467,6 +477,8 @@ class EdlCommandShell(Cmd):
 
         throttle_delay = 0.0
         block_transfer = True
+        request_crc = False
+        confirm_image = False
 
         if len(args) >= 3:
             try:
@@ -477,16 +489,37 @@ class EdlCommandShell(Cmd):
 
         if len(args) >= 4:
             arg3 = args[3].lower()
-            if arg3 in ["true", "1"]:
+            if arg3 in ["true", "1", "t", "y", "yes"]:
                 block_transfer = True
-            elif arg3 in ["false", "0"]:
+            elif arg3 in ["false", "0", "f", "n", "no"]:
                 block_transfer = False
             else:
                 print("invalid block_transfer arg. Must be true/false or 1/0.")
                 return
 
+        if len(args) >= 5:
+            arg4 = args[4].lower()
+            if arg4 in ["true", "1", "t", "y", "yes"]:
+                request_crc = True
+            elif arg4 in ["false", "0", "f", "n", "no"]:
+                request_crc = False
+            else:
+                print("invalid request_crc arg. Must be true/false or 1/0.")
+                return
+
+        if len(args) >= 6:
+            arg5 = args[5].lower()
+            if arg5 in ["true", "1", "t", "y", "yes"]:
+                confirm_image = True
+            elif arg5 in ["false", "0", "f", "n", "no"]:
+                confirm_image = False
+            else:
+                print("invalid confirm_image arg. Must be true/false or 1/0.")
+                return
+
         response = self._send_packet(
-            EdlCommandCode.CO_NODE_FLASH, (node_id, filename, throttle_delay, block_transfer)
+            EdlCommandCode.CO_NODE_FLASH,
+            (node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image),
         )
         if response is not None:
             print(f"Flash command sent. Response: {response}")

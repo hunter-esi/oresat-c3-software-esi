@@ -210,9 +210,6 @@ class EdlService(Service):
         else:
             res_payload = self._file_receiver.loop(req_packet.payload)
 
-        if res_payload is None:
-            return
-
         for payload in res_payload:
             self._respond(EdlVcid.FILE_TRANSFER, payload)
 
@@ -367,14 +364,22 @@ class EdlService(Service):
                 ecode = e.code
             ret = (node_id, index, subindex, ecode, len(data), data)
         elif request.code == EdlCommandCode.CO_NODE_FLASH:
-            node_id, filename, throttle_delay, block_transfer = request.args
+            node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image = (
+                request.args
+            )
             logger.info(
                 f"EDL queuing node flash for node 0x{node_id:02X} with file {filename} "
-                f"(throttle: {throttle_delay}, block: {block_transfer})"
+                f"(throttle: {throttle_delay}, block: {block_transfer}, "
+                f"crc: {request_crc}, confirm: {confirm_image})"
             )
             try:
                 self._node_flasher_service.enqueue_flash(
-                    node_id, filename, throttle_delay=throttle_delay, block_transfer=block_transfer
+                    node_id,
+                    filename,
+                    throttle_delay=throttle_delay,
+                    block_transfer=block_transfer,
+                    request_crc=request_crc,
+                    confirm_image=confirm_image,
                 )
                 ret = True
             except Exception as e:
@@ -432,7 +437,7 @@ class EdlFileReciever(CfdpUserBase):
             ProxyMessageType.MSG_TO_USER: self.unimplemented,
             ProxyMessageType.FS_REQUEST: self.unimplemented,
             ProxyMessageType.FAULT_HANDLER_OVERRIDE: self.unimplemented,
-            ProxyMessageType.TRANSMISSION_MODE: self.unimplemented,
+            ProxyMessageType.TRANSMISSION_MODE: self.transmission_mode_response,
             ProxyMessageType.FLOW_LABEL: self.unimplemented,
             ProxyMessageType.SEGMENTATION_CTRL: self.unimplemented,
             ProxyMessageType.PUT_RESPONSE: self.unimplemented,
@@ -475,7 +480,7 @@ class EdlFileReciever(CfdpUserBase):
                     closure_requested=False,
                     crc_on_transmission=False,
                     default_transmission_mode=TransmissionMode.ACKNOWLEDGED,
-                    crc_type=ChecksumType.CRC_32,
+                    crc_type=ChecksumType.MODULAR,
                 ),
             ]
         )
@@ -567,18 +572,22 @@ class EdlFileReciever(CfdpUserBase):
             logger.exception(f"Failed to update state machine: {e}")
             self.dest.reset()
             self.source.reset()
+        # It would seem natural to use dest.packets_ready but the count seems to get desynced from
+        # the contents of the packet queue. get_next_packet operates on the queue directly and
+        # reutrns None when it's out of packets. FIXME: Upstream bug?
         pdus = []
-        while self.dest.packets_ready:
-            pdus.append(self.dest.get_next_packet().pdu)
-        while self.source.packets_ready:
-            pdus.append(self.source.get_next_packet().pdu)
+        while (packet := self.dest.get_next_packet()) is not None:
+            pdus.append(packet.pdu)
+        while (packet := self.source.get_next_packet()) is not None:
+            pdus.append(packet.pdu)
 
         for out in pdus:
             logger.info(f"---> {out}")
-        return pdus or None
+        return pdus
 
     def unimplemented(self, _source, _tid, _reserved_message) -> PutRequest:
         """Default method for responding to unimplemented requests"""
+        logger.error(f"Recieved unimplemented request: {_reserved_message}")
         return None
 
     def missing_file_response(self, invalid: PutRequest) -> PutRequest:
@@ -616,9 +625,7 @@ class EdlFileReciever(CfdpUserBase):
             dest_file=Path(params.dest_file_as_path),
             trans_mode=None,
             closure_requested=True,
-            msgs_to_user=[
-                OriginatingTransactionId(params.transaction_id).to_generic_msg_to_user_tlv()
-            ],
+            msgs_to_user=[OriginatingTransactionId(_tid).to_generic_msg_to_user_tlv()],
         )
 
     def directory_listing_response(self, source, tid, reserved_message) -> PutRequest:
@@ -640,6 +647,10 @@ class EdlFileReciever(CfdpUserBase):
                 OriginatingTransactionId(tid).to_generic_msg_to_user_tlv(),
             ],
         )
+
+    def transmission_mode_response(self, source, tid, reserved_message) -> TransmissionMode:
+        """Attempts to set the transmission mode of the current transaction"""
+        return reserved_message.get_proxy_transmission_mode()
 
     def proxy_request_complete(self, originating_id, params) -> PutRequest:
         """Indicates that a proxy put request was successful"""
@@ -680,12 +691,25 @@ class EdlFileReciever(CfdpUserBase):
 
     def metadata_recv_indication(self, params: MetadataRecvParams):
         logger.info(f"Indication: Metadata Recv. {params}")
+        put = None
         for msg in params.msgs_to_user or []:
             if r := msg.to_reserved_msg_tlv():  # is None if not a reserved TLV message
-                op = r.get_cfdp_proxy_message_type() or r.get_directory_operation_type()
-                put = self.proxy_responses[op](params.source_id, params.transaction_id, r)
-                self.scheduled_requests.put(put)
+                # cfdp_proxy_message_type can be 0
+                op = r.get_cfdp_proxy_message_type()
+                if op is None:
+                    op = r.get_directory_operation_type()
+                response = self.proxy_responses[op](params.source_id, params.transaction_id, r)
+                if put is not None and response is PutRequest:
+                    self.scheduled_requests.put(put)
+                # CFDP can contain multiple requess in one indication, each refering to how the
+                # proxy put request is handled. This should be rewritten to account for that.
+                elif isinstance(response, TransmissionMode):
+                    put.trans_mode = response
+                elif isinstance(response, PutRequest):
+                    put = response
             # Ignore non-reserved messages for now
+        if put is not None:
+            self.scheduled_requests.put(put)
 
     def file_segment_recv_indication(self, params: FileSegmentRecvdParams):
         logger.info(f"Indication: File Segment Recv. {params}")
