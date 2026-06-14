@@ -51,11 +51,12 @@ class MissionDatabaseService(Service):
             return
 
         if (
-            self._node_mgr_service.node_state("gps") is not NodeState.ON
-            and self._node_mgr_service.node_state("gps") is not NodeState.BOOTLOADER
-            and self._node_mgr_service.node_state("gps") is not NodeState.DEAD
+            self._node_mgr_service.node_status("gps") is not NodeState.ON
+            and self._node_mgr_service.node_status("gps") is not NodeState.BOOTLOADER
+            and self._node_mgr_service.node_status("gps") is not NodeState.DEAD
         ):
             self._node_mgr_service.enable("gps")
+            self.sleep(self._refresh_delay.value)
 
         self._set_csv_gps()
         self._set_od_gps()
