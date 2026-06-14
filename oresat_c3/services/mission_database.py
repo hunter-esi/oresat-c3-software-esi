@@ -4,9 +4,11 @@ define GPS information.
 """
 
 from os.path import abspath
+from time import monotonic
 
 from olaf import Service, logger, new_oresat_file
 
+from .. import C3State
 from .node_manager import NodeManagerService
 
 
@@ -38,35 +40,51 @@ class MissionDatabaseService(Service):
         self.active = self.node.od["mdb"]["active"]
         self._refresh_delay = self.node.od["mdb"]["refresh_delay"]
         self._data_per_file = self.node.od["mdb"]["data_per_file"]
-        self._max_num_files = self.node.od["mdb"]["max_num_files"]
+        self._active_timeout = self.node.od["mdb"]["active_timeout"]
+        self._idle_timeout = self.node.od["mdb"]["idle_timeout"]
+
+        self._c3_state = self.node.od["status"]
 
     def on_loop(self):
-        # put everything in an array
-        # if array is bigger than _data_per_file, store it in a file and clear it.
-        # as queue updates, change the oresat configs.
-        # don't order the beacon data. have a counter that determines what gets updated.
+        """"""
 
         if self.active.value is False:
             self.sleep(self._refresh_delay.value)
             return
 
+        if self._node_mgr_service.node_status("gps") != 0xFF:  # Dead
+            self.active.value = False
+
         if (
             self._node_mgr_service.node_status("gps") != 1  # On.
             and self._node_mgr_service.node_status("gps") != 2  # Boot
-            and self._node_mgr_service.node_status("gps") != 0xFF  # Dead
+            and self._state_service.is_bat_lvl_good
         ):
             self._node_mgr_service.enable("gps")
             self.sleep(self._refresh_delay.value)
+            self._enabled_time = monotonic()
             return
 
         self._set_csv_gps()
         self._set_od_gps()
-
         if self.current_datapoints > self._data_per_file.value:
-            self.current_datapoints = 0
             self.update_files()
 
+        if (
+            self._state_service.is_bat_lvl_good is False
+            or self._enabled_time - monotonic() > self._active_timeout.value
+        ):
+            self._idle()
         self.sleep(self._refresh_delay.value)
+
+    def _idle(self):
+        # Turn off the gps if it is on and we are not in state EDL or self._was_enabled
+        # If the gps is on enter a loop where we check to make sure that the battery is good.
+        # if not, shut it down.
+
+        self._node_mgr_service.disable("gps")
+        self.sleep(self.idle_timeout.value)
+        self._enabled_time = monotonic()
 
     def update_files(self):
         new_file_name = new_oresat_file("gps-data", "c3", -1, ".csv")
@@ -83,6 +101,8 @@ class MissionDatabaseService(Service):
             files = sorted(files)
             logger.error(f"Deleting file {files[0].name}")
             self.node.fread_cache.remove(files[0])
+
+        self.current_datapoints = 0
 
     def _set_csv_gps(self):
         self.current_datapoints += 1
