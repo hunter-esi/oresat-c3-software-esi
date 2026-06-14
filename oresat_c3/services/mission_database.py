@@ -24,7 +24,7 @@ class MissionDatabaseService(Service):
         self._max_num_files = 0
         self.next_gps_index = 1
         self.data = ""
-        self.current_datapoints += 0
+        self.current_datapoints = 0
 
     def on_start(self):
         self._ecef_x = self.node.od["gps"]["skytraq_ecef_x"]
