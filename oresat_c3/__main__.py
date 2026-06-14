@@ -159,6 +159,7 @@ def main():
     app.add_service(edl_service)
     app.add_service(node_mgr_service)
     app.add_service(adcs_mgr_service)
+    app.add_service(node_flasher_service)
 
     for file_name in os.listdir(f"{path}/templates"):
         rest_api.add_template(f"{path}/templates/{file_name}")
