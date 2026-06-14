@@ -8,14 +8,15 @@ from time import monotonic
 
 from olaf import Service, logger, new_oresat_file
 
-from .. import C3State
 from .node_manager import NodeManagerService
 
 
 class MissionDatabaseService(Service):
     """Mission Database Service"""
 
-    def __init__(self, node_mgr_service: NodeManagerService):
+    BAT_LEVEL_LOW = 6500  # mV
+
+    def __init__(self, node_mgr_service: NodeManagerService) -> None:
         super().__init__()
         self._node_mgr_service = node_mgr_service
 
@@ -28,7 +29,7 @@ class MissionDatabaseService(Service):
         self.data = ""
         self.current_datapoints = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
         self._ecef_x = self.node.od["gps"]["skytraq_ecef_x"]
         self._ecef_y = self.node.od["gps"]["skytraq_ecef_y"]
         self._ecef_z = self.node.od["gps"]["skytraq_ecef_z"]
@@ -44,10 +45,12 @@ class MissionDatabaseService(Service):
         self._idle_timeout = self.node.od["mdb"]["idle_timeout"]
 
         self._c3_state = self.node.od["status"]
+        bat_1_rec = self.node.od["battery_1"]
+        self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
+        self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
 
-    def on_loop(self):
+    def on_loop(self) -> None:
         """"""
-
         if self.active.value is False:
             self.sleep(self._refresh_delay.value)
             return
@@ -58,7 +61,7 @@ class MissionDatabaseService(Service):
         if (
             self._node_mgr_service.node_status("gps") != 1  # On.
             and self._node_mgr_service.node_status("gps") != 2  # Boot
-            and self._state_service.is_bat_lvl_good
+            and self.is_bat_lvl_good
         ):
             self._node_mgr_service.enable("gps")
             self.sleep(self._refresh_delay.value)
@@ -71,22 +74,21 @@ class MissionDatabaseService(Service):
             self.update_files()
 
         if (
-            self._state_service.is_bat_lvl_good is False
+            self.is_bat_lvl_good is False
             or self._enabled_time - monotonic() > self._active_timeout.value
         ):
             self._idle()
         self.sleep(self._refresh_delay.value)
 
-    def _idle(self):
+    def _idle(self) -> None:
         # Turn off the gps if it is on and we are not in state EDL or self._was_enabled
         # If the gps is on enter a loop where we check to make sure that the battery is good.
         # if not, shut it down.
-
         self._node_mgr_service.disable("gps")
-        self.sleep(self.idle_timeout.value)
+        self.sleep(self._idle_timeout.value)
         self._enabled_time = monotonic()
 
-    def update_files(self):
+    def update_files(self) -> None:
         new_file_name = new_oresat_file("gps-data", "c3", -1, ".csv")
         new_file_path = abspath(self.node.cache_base_dir + new_file_name)
         logger.error(f"Making file {new_file_name}")
@@ -104,7 +106,7 @@ class MissionDatabaseService(Service):
 
         self.current_datapoints = 0
 
-    def _set_csv_gps(self):
+    def _set_csv_gps(self) -> None:
         self.current_datapoints += 1
         self.data += str(self._ecef_x.value) + ","
         self.data += str(self._ecef_y.value) + ","
@@ -117,7 +119,7 @@ class MissionDatabaseService(Service):
         secondstime = int.from_bytes(fulltime[:4], "little")
         self.data += str(secondstime) + "\n"
 
-    def _set_od_gps(self):
+    def _set_od_gps(self) -> None:
         append = f"_{self.next_gps_index}"
 
         self.node.od["hist_ecef_x"]["ecef_x" + append].value = self._ecef_x.value
@@ -133,3 +135,13 @@ class MissionDatabaseService(Service):
         self.next_gps_index += 1
         if self.next_gps_index > 32:
             self.next_gps_index = 1
+
+    # stolen from state service. probably should use that one instead of redefining it.
+    @property
+    def is_bat_lvl_good(self) -> bool:
+        """bool: Helper property to check if the battery levels are good."""
+
+        return (
+            self._vbatt_bp1_obj.value > self.BAT_LEVEL_LOW
+            and self._vbatt_bp2_obj.value > self.BAT_LEVEL_LOW
+        )
