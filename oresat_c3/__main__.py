@@ -20,6 +20,7 @@ from olaf import (
 
 from . import C3State, __version__
 from .protocols.cachestore import CacheStore
+from .services.adcs_manager import ADCSManager
 from .services.beacon import BeaconService
 from .services.channel_router import ChannelRouterService
 from .services.cop_manager import CopManagerService
@@ -149,6 +150,7 @@ def main():
     edl_service = EdlService(
         app.node, node_mgr_service, beacon_service, channel_router_service, node_flasher_service
     )
+    adcs_mgr_service = ADCSManager()
     mdb_service = MissionDatabaseService(node_mgr_service)
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
@@ -158,6 +160,7 @@ def main():
     app.add_service(channel_router_service)
     app.add_service(edl_service)
     app.add_service(node_mgr_service)
+    app.add_service(adcs_mgr_service)
     app.add_service(node_flasher_service)
     app.add_service(mdb_service)
 
