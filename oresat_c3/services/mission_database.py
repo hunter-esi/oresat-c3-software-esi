@@ -44,9 +44,9 @@ class MissionDatabaseService(Service):
         self._active_timeout = self.node.od["mdb"]["active_timeout"]
         self._idle_timeout = self.node.od["mdb"]["idle_timeout"]
 
-        bat_1_rec = self.node.od["battery_1"]
-        self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
-        self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
+        bat_2_rec = self.node.od["battery_2"]
+        self._vbatt_bp1_obj = bat_2_rec["pack_1_vbatt"]
+        self._vbatt_bp2_obj = bat_2_rec["pack_2_vbatt"]
 
     def on_loop(self) -> None:
         """"""

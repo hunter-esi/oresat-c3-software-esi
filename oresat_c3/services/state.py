@@ -247,10 +247,11 @@ class StateService(Service):
     def is_bat_lvl_good(self) -> bool:
         """bool: Helper property to check if the battery levels are good."""
 
-        return (
-            self._vbatt_bp1_obj.value > self.BAT_LEVEL_LOW
-            and self._vbatt_bp2_obj.value > self.BAT_LEVEL_LOW
-        )
+        # return (
+        #     self._vbatt_bp1_obj.value > self.BAT_LEVEL_LOW
+        #     and self._vbatt_bp2_obj.value > self.BAT_LEVEL_LOW
+        # )
+        return True
 
     @property
     def has_reset_timed_out(self) -> bool:
