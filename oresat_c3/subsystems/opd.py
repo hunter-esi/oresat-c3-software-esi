@@ -251,7 +251,7 @@ class OpdNode:
     @property
     def fault(self) -> bool:
         """bool: The OPD fault pin has tripped."""
-        if self._addr in (0x18, 0x1f):
+        if self._addr in (0x18, 0x1F):
             return False
 
         fault = True
