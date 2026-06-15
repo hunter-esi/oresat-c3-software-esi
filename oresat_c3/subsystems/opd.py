@@ -485,8 +485,29 @@ class OpdMcxnNode(OpdNode):
 class OpdOctavoNode(OpdNode):
     """A Octavo A8-based OPD Node"""
 
-    _SYS_BOOT2 = 0
     _UART_PIN = 7  # connect to C3 UART
+
+    def __init__(self, bus: int, name: str, addr: int, *, mock: bool = False) -> None:
+        """
+        Parameters
+        ----------
+        not_enable_pin: int
+            Pin that enable the OPD subsystem.
+        name: str
+            Name of OPD node.
+        bus: int
+            The I2C bus.
+        mock: bool
+            Mock the OPD subsystem.
+        """
+        super().__init__(bus, name, addr, mock=mock)
+        # Modern PSAS card standards have SYS_BOOT2 on pin 5 but the GPS card is the last
+        # of the old style that had it on 0. FIXME: This class shouldn't know specific OPD
+        # addresses. Move pin functionality to configs?
+        if addr == 0x19:
+            self._SYS_BOOT2 = 0
+        else:
+            self._SYS_BOOT2 = 5
 
     def enable(self) -> OpdNodeState:
         """Enable the node"""
