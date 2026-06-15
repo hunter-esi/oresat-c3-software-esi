@@ -25,6 +25,7 @@ from .services.beacon import BeaconService
 from .services.channel_router import ChannelRouterService
 from .services.cop_manager import CopManagerService
 from .services.edl import EdlService
+from .services.mission_database import MissionDatabaseService
 from .services.node_flasher import NodeFlasherService
 from .services.node_manager import NodeManagerService
 from .services.radios import RadiosService
@@ -150,6 +151,7 @@ def main():
         app.node, node_mgr_service, beacon_service, channel_router_service, node_flasher_service
     )
     adcs_mgr_service = ADCSManager()
+    mdb_service = MissionDatabaseService(node_mgr_service)
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
@@ -160,6 +162,7 @@ def main():
     app.add_service(node_mgr_service)
     app.add_service(adcs_mgr_service)
     app.add_service(node_flasher_service)
+    app.add_service(mdb_service)
 
     for file_name in os.listdir(f"{path}/templates"):
         rest_api.add_template(f"{path}/templates/{file_name}")

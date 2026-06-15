@@ -44,7 +44,7 @@ class RadiosService(Service):
         else:
             self._radio_enable_gpio = request_gpio_output("/dev/gpiochip1", 22, "RADIO_ENABLE")
             self.uhf = UHFRadio()
-            self.lband = LBandRadio()
+            self.lband = Radio()
 
         self.recv_queue: SimpleQueue[bytes] = SimpleQueue()
 

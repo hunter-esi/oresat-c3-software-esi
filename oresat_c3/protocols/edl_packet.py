@@ -3,7 +3,7 @@ Anything dealing with packing and unpacking EDL (Engineering Data Link) packets.
 """
 
 from enum import IntEnum
-from typing import Union
+from typing import Optional, Union
 
 from spacepackets.cfdp.pdu import PduFactory
 from spacepackets.cfdp.pdu.file_directive import AbstractPduBase
@@ -80,12 +80,14 @@ class EdlPacket:
             and self.payload == other.payload
         )
 
-    def pack(self, hmac_key: bytes) -> bytes:
+    def pack(self, hmac_key: bytes, control_word: Optional[bytes] = None) -> bytes:
         """
         Pack the EDL packet.
 
         Parameters
         ----------
+        control_word : Optional[bytes]
+            Send a control word with the frame.
         hmac_key: bytes
             The HMAC key to use.
         """
