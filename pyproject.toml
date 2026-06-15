@@ -26,13 +26,13 @@ dependencies = [
     "fastcrc~=0.3",
     "numpy>=1.19.5",
     "oresat-configs>=1.2.0",
-    "oresat-olaf>=3.7.2",
+    "oresat-olaf>=3.7.4",
     "scipy>=1.6.0",
     "skyfield>=1.54",
     "smbus2",
     "spacepackets>=0.30.1",
     "ccsds-cop>=0.0.0",
-    "typing-extensions>=4.15.0"
+    "typing-extensions>=4.13.0"
 ]
 
 [dependency-groups]
