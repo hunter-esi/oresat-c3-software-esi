@@ -552,6 +552,133 @@ class OpdOctavoNode(OpdNode):
         return r
 
 
+class OpdSpr8Node(OpdNode):
+    """Not actually an opd node, but the controller for the Sband sdr."""
+
+    _RESET_DELAY_S = 3
+
+    def __init__(self, bus: int, name: str, addr: int, *, mock: bool = False) -> None:
+        """
+        Parameters
+        ----------
+        not_enable_pin: int
+            Pin that enable the OPD subsystem.
+        name: str
+            Name of OPD node.
+        bus: int
+            The I2C bus.
+        mock: bool
+            Mock the OPD subsystem.
+        """
+
+        self._name = name
+        if not mock:
+            self._sband_enable_gpio = request_gpio_output("/dev/gpiochip2", 14, "FIRE_HELICAL_2")
+        else:
+            # TODO: COME UP WITH A MOCKING SOLUTION
+            self._sband_enable_gpio = request_gpio_output("/dev/gpiochip2", 14, "FIRE_HELICAL_2")
+        self._status = OpdNodeState.DISABLED
+
+    def __del__(self) -> None:
+        with suppress(Max7310Error):
+            self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
+            self._sband_enable_gpio.release()
+
+    def configure(self) -> None:
+        self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
+        self._status = OpdNodeState.DISABLED
+
+    def probe(self, *, reset: bool = False) -> bool:
+        """Always return true. Only way to check if the node is there is heartbeat"""
+
+        return True
+
+    def enable(self) -> OpdNodeState:
+        """
+        Enable the OPD node.
+
+        Returns
+        -------
+        OpdNodeState
+            The node state after enabling the node.
+        """
+
+        logger.debug(f"enabling OPD node {self.name} (SPARE_8)")
+
+        self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.ACTIVE)
+        self._status = OpdNodeState.ENABLED
+        return self._status
+
+    def disable(self) -> OpdNodeState:
+        """
+        Disable the OPD node.
+
+        Returns
+        -------
+        OpdNodeState
+            The node state after disabling the node.
+        """
+
+        logger.debug(f"disabling OPD node {self.name} (SPARE_8)")
+        self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
+        self._status = OpdNodeState.DISABLED
+        return self._status
+
+    def reset(self, attempts: int = 3) -> OpdNodeState:
+        """
+        We can only check if it is working through the heartbeat, so this just reboots it.
+
+        Parameters
+        ----------
+        attempts: int
+            The times to attempt to reset.
+        """
+
+        logger.debug(f"restting OPD node {self.name} (SPARE_8)")
+        self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
+        self._status = OpdNodeState.DISABLED
+        sleep(self._RESET_DELAY_S)
+        self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.ACTIVE)
+        self._status = OpdNodeState.ENABLED
+        return self._status
+
+    def enable_uart(self) -> None:
+        pass
+
+    def disable_uart(self) -> None:
+        pass
+
+    @property
+    def name(self) -> str:
+        """int: Unique name."""
+
+        return self._name
+
+    @property
+    def addr(self) -> int:
+        """int: Unique address."""
+
+        return self._addr
+
+    @property
+    def status(self) -> OpdNodeState:
+        """OpdNodeState: Status of the OPD node."""
+
+        return self._status
+
+    @property
+    def is_enabled(self) -> bool:
+        """bool: The node is enabled."""
+
+        return self._status == OpdNodeState.ENABLED
+
+    @property
+    def fault(self) -> bool:
+        """bool: The OPD fault pin has tripped."""
+
+        return self._status == OpdNodeState.FAULT
+
+
 @unique
 class OpdState(Enum):
     """OPD subsystem states."""
@@ -625,6 +752,7 @@ class Opd:
             "stm32": OpdStm32Node,
             "mcxn": OpdMcxnNode,
             "octavo": OpdOctavoNode,
+            "thrdpty": OpdSpr8Node,
         }
 
         self._nodes[name] = opd_type[info.processor](

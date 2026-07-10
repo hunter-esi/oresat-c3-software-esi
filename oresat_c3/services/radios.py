@@ -9,8 +9,9 @@ import struct
 import time
 from queue import SimpleQueue
 
+from canopen import SdoAbortedError, SdoCommunicationError
 from gpiod.line import Value
-from olaf import Service, logger
+from olaf import MasterNode, Service, logger
 
 from ..drivers.si41xx import Si41xx, Si41xxIfdiv
 from ..subsystems._gpio import request_gpio_input, request_gpio_output
@@ -334,3 +335,36 @@ class UHFRadio(Radio):
         time.sleep(self.TOT_CLEAR_DELAY)
 
         self._uhf_tot_clear_gpio.set_value(self._uhf_tot_clear_gpio.offsets[0], Value.INACTIVE)
+
+
+class SbandRadio(Radio):
+    SDR_BOOT_TIMEOUT = 10
+
+    def __init__(self):
+        """Request gpio."""
+        super().__init__()
+        # this still uses the gpio definition from c3v6. Should be changed from FIRE_HELICAL_2.
+        self.sdr_good = False
+
+    def enable(self, node: MasterNode):
+        # self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.ACTIVE)
+        # Needs to talk with node_manager to turn on the radio instead
+        time.sleep(self.SDR_BOOT_TIMEOUT)
+        node.sdo_write("sdr", "sdr_power", None, 1)
+
+
+    def disable(self, node: MasterNode):
+        node.sdo_write("sdr", "sdr_power", None, 0)
+        time.sleep(self.SDR_BOOT_TIMEOUT)
+        # Talk with node_manager
+
+    def is_rf_ok(self) -> bool:
+        return True
+
+    def rf_reset(self):
+        self._rf_reset_count += 1
+
+    @property
+    def rf_reset_count(self):
+        return self._rf_reset_count
+

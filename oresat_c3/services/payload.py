@@ -10,7 +10,7 @@ from time import monotonic
 from olaf import Service
 
 class PayloadService(Service):
-    def __init__():
+    def __init__(self):
         self._state = None
 
 
