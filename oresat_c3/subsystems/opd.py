@@ -572,19 +572,19 @@ class OpdSpr8Node(OpdNode):
         """
 
         self._name = name
+        self.mock = mock
         if not mock:
-            self._sband_enable_gpio = request_gpio_output("/dev/gpiochip2", 14, "FIRE_HELICAL_2")
-        else:
-            # TODO: COME UP WITH A MOCKING SOLUTION
             self._sband_enable_gpio = request_gpio_output("/dev/gpiochip2", 14, "FIRE_HELICAL_2")
         self._status = OpdNodeState.DISABLED
 
     def __del__(self) -> None:
-        with suppress(Max7310Error):
+        if not self.mock:
             self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
             self._sband_enable_gpio.release()
 
     def configure(self) -> None:
+        if self.mock:
+            self._staus = OpdNodeState.DISABLED
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
         self._status = OpdNodeState.DISABLED
 
@@ -604,6 +604,9 @@ class OpdSpr8Node(OpdNode):
         """
 
         logger.debug(f"enabling OPD node {self.name} (SPARE_8)")
+        if self.mock:
+            self._staus = OpdNodeState.ENABLED
+            return self._status
 
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.ACTIVE)
         self._status = OpdNodeState.ENABLED
@@ -620,6 +623,10 @@ class OpdSpr8Node(OpdNode):
         """
 
         logger.debug(f"disabling OPD node {self.name} (SPARE_8)")
+        if self.mock:
+            self._staus = OpdNodeState.DISABLED
+            return self._status
+
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
         self._status = OpdNodeState.DISABLED
         return self._status
@@ -635,6 +642,10 @@ class OpdSpr8Node(OpdNode):
         """
 
         logger.debug(f"restting OPD node {self.name} (SPARE_8)")
+        if self.mock:
+            self._staus = OpdNodeState.ENABLED
+            return self._status
+
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
         self._status = OpdNodeState.DISABLED
         sleep(self._RESET_DELAY_S)
