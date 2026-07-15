@@ -141,9 +141,9 @@ def main():
     app.od["versions"]["sw_version"].value = __version__
 
     state_service = StateService(config.fram_def, mock_hw)
-    radios_service = RadiosService(mock_hw)
-    beacon_service = BeaconService(config.beacon_def, radios_service)
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
+    radios_service = RadiosService(node_mgr_service, mock_hw)
+    beacon_service = BeaconService(config.beacon_def, radios_service)
     node_flasher_service = NodeFlasherService(app.node.fwrite_cache.dir, node_mgr_service)
     cop_service = CopManagerService()
     channel_router_service = ChannelRouterService(radios_service, cop_service)

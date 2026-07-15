@@ -574,6 +574,7 @@ class OpdSpr8Node(OpdNode):
         self._name = name
         self.mock = mock
         if not mock:
+            # this still uses the gpio definition from c3v6. Should be changed from FIRE_HELICAL_2.
             self._sband_enable_gpio = request_gpio_output("/dev/gpiochip2", 14, "FIRE_HELICAL_2")
         self._status = OpdNodeState.DISABLED
 
@@ -584,7 +585,7 @@ class OpdSpr8Node(OpdNode):
 
     def configure(self) -> None:
         if self.mock:
-            self._staus = OpdNodeState.DISABLED
+            self._status = OpdNodeState.DISABLED
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
         self._status = OpdNodeState.DISABLED
 
@@ -605,7 +606,8 @@ class OpdSpr8Node(OpdNode):
 
         logger.debug(f"enabling OPD node {self.name} (SPARE_8)")
         if self.mock:
-            self._staus = OpdNodeState.ENABLED
+            logger.debug("nvavubi addsvadss)")
+            self._status = OpdNodeState.ENABLED
             return self._status
 
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.ACTIVE)
@@ -624,7 +626,7 @@ class OpdSpr8Node(OpdNode):
 
         logger.debug(f"disabling OPD node {self.name} (SPARE_8)")
         if self.mock:
-            self._staus = OpdNodeState.DISABLED
+            self._status = OpdNodeState.DISABLED
             return self._status
 
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
@@ -641,9 +643,9 @@ class OpdSpr8Node(OpdNode):
             The times to attempt to reset.
         """
 
-        logger.debug(f"restting OPD node {self.name} (SPARE_8)")
+        logger.debug(f"resetting OPD node {self.name} (SPARE_8)")
         if self.mock:
-            self._staus = OpdNodeState.ENABLED
+            self._status = OpdNodeState.ENABLED
             return self._status
 
         self._sband_enable_gpio.set_value(self._sband_enable_gpio.offsets[0], Value.INACTIVE)
@@ -674,7 +676,6 @@ class OpdSpr8Node(OpdNode):
     @property
     def status(self) -> OpdNodeState:
         """OpdNodeState: Status of the OPD node."""
-
         return self._status
 
     @property
