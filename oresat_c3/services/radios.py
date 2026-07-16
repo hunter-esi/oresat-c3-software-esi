@@ -11,6 +11,7 @@ from queue import SimpleQueue
 from time import monotonic
 
 from canopen.objectdictionary import ODVariable
+from canopen.sdo.exceptions import SdoError
 from gpiod.line import Value
 from olaf import MasterNode, Service, logger
 
@@ -276,6 +277,7 @@ class RadiosService(Service):
         except Exception as e:  # pylint: disable=W0718
             logger.error(f"failed to send data to sband: {e}")
 
+
 class Radio:
     def __init__(self):
         self._rf_reset_count = 0
@@ -421,7 +423,7 @@ class UHFRadio(Radio):
 
 
 class SbandRadio(Radio):
-    # self.status pseudoenum:
+    # self.state pseudoenum:
     # 0: off
     # 1: on, no heartbeat
     # 2: on, heartbeat, sent powerup radio message
@@ -429,9 +431,12 @@ class SbandRadio(Radio):
     # 4: graceful shutdown.
     # 255: error.
 
+    FAULT_LIMIT = 5 # number of failed sdos before going to 0xFF state.
+
     def __init__(self, node: MasterNode, node_mgr: NodeManagerService, status: ODVariable):
         """Request gpio."""
         super().__init__()
+        self._node = node
         self._node_mgr = node_mgr
         self._state = 0
         self._od_status = status
@@ -442,40 +447,76 @@ class SbandRadio(Radio):
             logger.debug("telling nodemgr to turn on sdr.")
             self._node_mgr.enable("sdr")
             self._state = 1
+            self._sdo_fault = 0
+
         elif self._state == 1:
             node_status = self._node_mgr.node_status("sdr")
             logger.debug(f"nodemgr status of sdr: {node_status}.")
             if node_status == 2: # The sdr is powered on.
-                self.node.sdo_write("sdr", "sdr_power", None, 1)
+                self._send_start_cmd()
                 self._state = 2
             elif node_status == 0xFF: # dead
                 self._state = 0xFF
                 self.status.value = self._state
                 self.disable()
                 logger.warning("sband handler was told that sdr is dead.")
+
         elif self._state == 2:
-            val = self.node.sdo_read("sdr", "sdr_status", None)
-            if val == 0xFF:
+            val = self._get_sdr_status()
+            if val == 0:
+                self._send_start_cmd()
+            elif val == 2:
+                self._state = 3
+            elif val == 0xFF:
                 self._state = 0xFF
                 self.status.value = self._state
                 self.disable()
                 logger.warning("sband handler sdoread error from sdr.")
-            elif val == 2:
-                self._state = 3
+
         else:
             logger.warning(f"Sband radio enable called with invalid state: {self._state}.")
             self._state = 0xFF
+
         time.sleep(0.25)
 
     def disable(self):
-        self._od_status = 4
+        self._state = 4
+        self._sdo_fault = 0
         self._shutdown()
-        self._od_status = 0
+        self._state = 0
 
     def _shutdown(self):
-        self.node.sdo_write("sdr", "sdr_power", None, 0)
-        time.sleep(2)
+        self._send_stop_cmd()
+        time.sleep(5)
         self._node_mgr.disable("sdr")
+
+    # fault tolerant sdo functions.
+    def _send_start_cmd(self):
+        try:
+            self._node.sdo_write("sdr", "sdr_power", None, 1)
+        except SdoError as e:
+            logger.error(f"failed to send sdo power on cmd to SDR: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.FAULT_LIMIT:
+                self._state = 0xFF
+
+    def _send_stop_cmd(self):
+        try:
+            self._node.sdo_write("sdr", "sdr_power", None, 0)
+        except SdoError as e:
+            logger.error(f"failed to send sdo power off cmd to SDR: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.FAULT_LIMIT:
+                self._state = 0xFF
+
+    def _get_sdr_status(self):
+        try:
+            self._node.sdo_read("sdr", "sdr_status", None)
+        except SdoError as e:
+            logger.error(f"failed to get sdr status: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.FAULT_LIMIT:
+                self._state = 0xFF
 
     def is_rf_ok(self) -> bool:
         self._od_status.value = self._state
