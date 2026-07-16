@@ -441,7 +441,7 @@ class SbandRadio(Radio):
         self._state = 0
         self._od_status = status
 
-    def enable(self):
+    def enable(self) -> None:
         """State machine for the bootup process."""
         if self._state == 0:
             logger.debug("telling nodemgr to turn on sdr.")
@@ -464,6 +464,7 @@ class SbandRadio(Radio):
         elif self._state == 2:
             val = self._get_sdr_status()
             if val == 0:
+                logger.info("resending power on cmd to sdr.")
                 self._send_start_cmd()
             elif val == 2:
                 self._state = 3
@@ -479,19 +480,19 @@ class SbandRadio(Radio):
 
         time.sleep(0.25)
 
-    def disable(self):
+    def disable(self) -> None:
         self._state = 4
         self._sdo_fault = 0
         self._shutdown()
         self._state = 0
 
-    def _shutdown(self):
+    def _shutdown(self) -> None:
         self._send_stop_cmd()
         time.sleep(5)
         self._node_mgr.disable("sdr")
 
     # fault tolerant sdo functions.
-    def _send_start_cmd(self):
+    def _send_start_cmd(self) -> None:
         try:
             self._node.sdo_write("sdr", "sdr_power", None, 1)
         except SdoError as e:
@@ -500,7 +501,7 @@ class SbandRadio(Radio):
             if self._sdo_fault >= self.FAULT_LIMIT:
                 self._state = 0xFF
 
-    def _send_stop_cmd(self):
+    def _send_stop_cmd(self) -> None:
         try:
             self._node.sdo_write("sdr", "sdr_power", None, 0)
         except SdoError as e:
@@ -509,20 +510,22 @@ class SbandRadio(Radio):
             if self._sdo_fault >= self.FAULT_LIMIT:
                 self._state = 0xFF
 
-    def _get_sdr_status(self):
+    def _get_sdr_status(self) -> int:
         try:
-            self._node.sdo_read("sdr", "sdr_status", None)
+            val = self._node.sdo_read("sdr", "sdr_status", None)
         except SdoError as e:
             logger.error(f"failed to get sdr status: {e}")
             self._sdo_fault += 1
             if self._sdo_fault >= self.FAULT_LIMIT:
                 self._state = 0xFF
+            val = 0
+        return val
 
     def is_rf_ok(self) -> bool:
         self._od_status.value = self._state
         return self._state == 3
 
-    def rf_reset(self):
+    def rf_reset(self) -> None:
         self._rf_reset_count += 1
 
     @property
