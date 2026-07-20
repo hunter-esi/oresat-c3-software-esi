@@ -20,6 +20,8 @@ from ..subsystems._gpio import request_gpio_input, request_gpio_output
 from .node_manager import NodeManagerService
 
 
+# TODO: The sband is expecting a message before it sends. we don't do this, and theres some
+# scheduling that we need to do to make sure that things work.
 class RadiosService(Service):
     """Radios Service."""
 
@@ -52,6 +54,9 @@ class RadiosService(Service):
 
         self.recv_queue: SimpleQueue[bytes] = SimpleQueue()
         self._node_mgr = node_mgr
+
+        # self.sband_queue: SimpleQueue[bytearray] = SimpleQueue()
+        # self.sband_est_fin = monotonic()
 
     def on_start(self):
         """Provide uninterruptible power-on sequence, and bring up radio daemons."""
@@ -431,7 +436,7 @@ class SbandRadio(Radio):
     # 4: graceful shutdown.
     # 255: error.
 
-    FAULT_LIMIT = 5 # number of failed sdos before going to 0xFF state.
+    SDO_FAULT_LIMIT = 5 # number of failed sdos before going to 0xFF state.
 
     def __init__(self, node: MasterNode, node_mgr: NodeManagerService, status: ODVariable):
         """Request gpio."""
@@ -498,7 +503,7 @@ class SbandRadio(Radio):
         except SdoError as e:
             logger.error(f"failed to send sdo power on cmd to SDR: {e}")
             self._sdo_fault += 1
-            if self._sdo_fault >= self.FAULT_LIMIT:
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
                 self._state = 0xFF
 
     def _send_stop_cmd(self) -> None:
@@ -507,7 +512,7 @@ class SbandRadio(Radio):
         except SdoError as e:
             logger.error(f"failed to send sdo power off cmd to SDR: {e}")
             self._sdo_fault += 1
-            if self._sdo_fault >= self.FAULT_LIMIT:
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
                 self._state = 0xFF
 
     def _get_sdr_status(self) -> int:
@@ -516,10 +521,20 @@ class SbandRadio(Radio):
         except SdoError as e:
             logger.error(f"failed to get sdr status: {e}")
             self._sdo_fault += 1
-            if self._sdo_fault >= self.FAULT_LIMIT:
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
                 self._state = 0xFF
             val = 0
         return val
+
+    def send_queued_messages(self) -> int:
+        """The sband needs us to send a 1 to 0x400B before it begins downlinking data"""
+        try:
+            self._node.sdo_write("sdr", "tx_send_cache", None, 1)
+        except SdoError as e:
+            logger.error(f"failed to get sdr status: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
+                self._state = 0xFF
 
     def is_rf_ok(self) -> bool:
         self._od_status.value = self._state
