@@ -144,7 +144,7 @@ def main():
     state_service = StateService(config.fram_def, mock_hw)
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
     radios_service = RadiosService(node_mgr_service, mock_hw)
-    beacon_service = BeaconService(config.beacon_def, radios_service)
+    beacon_service = BeaconService(config.beacon_def, config.leop_beacon_def, radios_service)
     node_flasher_service = NodeFlasherService(app.node.fwrite_cache.dir, node_mgr_service)
     cop_service = CopManagerService()
     channel_router_service = ChannelRouterService(radios_service, cop_service)
@@ -153,7 +153,7 @@ def main():
     )
     adcs_mgr_service = ADCSManager()
     mdb_service = MissionDatabaseService(node_mgr_service)
-    payload_service = PayloadService(node_mgr_service, config.mission)
+    payload_service = PayloadService(node_mgr_service, config.mission, mock_hw)
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)

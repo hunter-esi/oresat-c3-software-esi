@@ -18,25 +18,28 @@ from .node_manager import NodeManagerService
 
 
 class PayloadService(Service):
-    def __init__(self, node_mgr: NodeManagerService, mission: Mission) -> None:
+    def __init__(self, node_mgr: NodeManagerService, mission: Mission, mock: bool = True) -> None:
         super().__init__()
         self._state = None
         self._node_mgr = node_mgr
-        self.mission = mission
+        self._mission = mission
+        self._mock = mock
 
     def on_start(self) -> None:
         self._state = self.node.od["payload_ctrl"]["state"]
         self._enabled = self.node.od["payload_ctrl"]["enabled"]
 
-        if self.mission.__str__() == "osiris_b1":
+        if self._mission.__str__() == "osiris_b1":
             logger.info("creating osiris payload handler")
             # self._payload_handler = BeeconHandler(self._state)
-        if self.mission.__str__() == "prism":
+        if self._mission.__str__() == "prism":
             logger.info("creating prism payload handler")
             # self._payload_handler = BeeconHandler(self._state)
-        if self.mission.__str__() == "beecon":
+        if self._mission.__str__() == "beecon":
             logger.info("creating beecon payload handler")
-            self._payload_handler = BeeconHandler(self._state)
+            self._payload_handler = BeeconHandler(
+                self._state,  self.node.od["beacon"]["delay"], self._mock
+            )
         else:
             logger.error("Payload Service started despite mission not having a compatable payload.")
             raise Exception(
@@ -56,9 +59,11 @@ class BeeconHandler():
     _I2C_BUS_NUM = 2
     _BEECON_DELAY = 10
 
-    def __init__(self, in_state: ODVariable) -> None:
+    def __init__(self, in_state: ODVariable, oresat_beacon_timeout: ODVariable, mock: bool) -> None:
         self._state = in_state
-        self._beecon_node = OpdNode(self._I2C_BUS_NUM, "beecon", 0x10)
+        self._ore_beacon = oresat_beacon_timeout
+        self._ore_beacon_default = self._ore_beacon.value
+        self._beecon_node = OpdNode(self._I2C_BUS_NUM, "beecon", 0x10, mock=mock)
         self._beecon_node.configure()
         if not self._beecon_node.probe():
             logger.error("Beecon handler could not find science card!")
@@ -70,9 +75,11 @@ class BeeconHandler():
         logger.warning("looping beecon state machine")
         if state_val == 0:
             if self._beecon_node.is_enabled:
+                self._ore_beacon.value = self._ore_beacon_default
                 self._beecon_node.disable()
         elif state_val == 1:
             if not self._beecon_node.is_enabled:
+                self._ore_beacon.value = 0
                 self._beecon_node.enable()
         else:
             logger.error("beecon service got incoherent state")
