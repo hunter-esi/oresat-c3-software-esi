@@ -28,6 +28,7 @@ from .services.edl import EdlService
 from .services.mission_database import MissionDatabaseService
 from .services.node_flasher import NodeFlasherService
 from .services.node_manager import NodeManagerService
+from .services.payload import PayloadService
 from .services.radios import RadiosService
 from .services.state import StateService
 from .subsystems.rtc import set_system_time_to_rtc_time
@@ -152,6 +153,7 @@ def main():
     )
     adcs_mgr_service = ADCSManager()
     mdb_service = MissionDatabaseService(node_mgr_service)
+    payload_service = PayloadService(node_mgr_service, config.mission)
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
@@ -163,6 +165,7 @@ def main():
     app.add_service(adcs_mgr_service)
     app.add_service(node_flasher_service)
     app.add_service(mdb_service)
+    app.add_service(payload_service)
 
     for file_name in os.listdir(f"{path}/templates"):
         rest_api.add_template(f"{path}/templates/{file_name}")

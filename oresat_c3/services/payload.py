@@ -5,33 +5,37 @@ of extending it to other payloads later.
 """
 
 # unused imports will be used for piplasma and osiris.
+import time
 from os.path import abspath  # noqa: F401
-from time import monotonic, time  # noqa: F401
+from time import monotonic  # noqa: F401
 
 from canopen.objectdictionary import ODVariable
 from olaf import Service, logger
+from oresat_configs.constants import Mission
 
 from ..subsystems.opd import OpdNode
 from .node_manager import NodeManagerService
 
 
 class PayloadService(Service):
-    def __init__(self, node_mgr: NodeManagerService) -> None:
+    def __init__(self, node_mgr: NodeManagerService, mission: Mission) -> None:
+        super().__init__()
         self._state = None
         self._node_mgr = node_mgr
+        self.mission = mission
 
     def on_start(self) -> None:
-        self._state = self.node.od["payload"]["state"]
-        self._enabled = self.node.od["payload"]["enabled"]
+        self._state = self.node.od["payload_ctrl"]["state"]
+        self._enabled = self.node.od["payload_ctrl"]["enabled"]
 
-        if "osiris_sci" in self.node._od_db: # not self._mock_hw and
+        if self.mission.__str__() == "osiris_b1":
             logger.info("creating osiris payload handler")
             # self._payload_handler = BeeconHandler(self._state)
-        if "piplasma_sci" in self.node._od_db: # not self._mock_hw and
-            logger.info("creating osiris payload handler")
+        if self.mission.__str__() == "prism":
+            logger.info("creating prism payload handler")
             # self._payload_handler = BeeconHandler(self._state)
-        if "beecon_sci" in self.node._od_db: # not self._mock_hw and
-            logger.info("creating osiris payload handler")
+        if self.mission.__str__() == "beecon":
+            logger.info("creating beecon payload handler")
             self._payload_handler = BeeconHandler(self._state)
         else:
             logger.error("Payload Service started despite mission not having a compatable payload.")
@@ -40,7 +44,7 @@ class PayloadService(Service):
             )
 
     def on_loop(self) -> None:
-        if not self._enabled:
+        if not self._enabled.value:
             time.sleep(10)
             return
         self._payload_handler.loop()
@@ -50,16 +54,21 @@ class BeeconHandler():
     # 0: off
     # 1: on
     _I2C_BUS_NUM = 2
+    _BEECON_DELAY = 10
 
     def __init__(self, in_state: ODVariable) -> None:
         self._state = in_state
         self._beecon_node = OpdNode(self._I2C_BUS_NUM, "beecon", 0x10)
+        self._beecon_node.configure()
+        if not self._beecon_node.probe():
+            logger.error("Beecon handler could not find science card!")
+            raise Exception("Beecon handler could not find science card!")
 
     def loop(self) -> None:
         """Runs the beecon state machine. Makes sure the beecon is on or off, depending on state"""
         state_val = self._state.value
+        logger.warning("looping beecon state machine")
         if state_val == 0:
-            # check if the beecon is off. If not, turn it off.
             if self._beecon_node.is_enabled:
                 self._beecon_node.disable()
         elif state_val == 1:
@@ -67,6 +76,6 @@ class BeeconHandler():
                 self._beecon_node.enable()
         else:
             logger.error("beecon service got incoherent state")
-        time.sleep(1)
+        time.sleep(self._BEECON_DELAY)
 
 
