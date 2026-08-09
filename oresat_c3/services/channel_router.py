@@ -25,8 +25,6 @@ class ChannelRouterService(Service):
     valid frames into the appropriate queue.
     """
 
-    _CLCW_INTERVAL = 1.0
-
     def __init__(self, radios_service: RadiosService, cop_service: CopManagerService):
         super().__init__()
         self._radios_service = radios_service
@@ -46,7 +44,7 @@ class ChannelRouterService(Service):
 
         if self.node.od["status"].value == C3State.EDL:
             now = monotonic()
-            if now - self._last_clcw_time >= self._CLCW_INTERVAL:
+            if now - self._last_clcw_time >= self.node.od["edl"]["clcw_interval"].value / 1000:
                 for clcw in self._get_all_clcw():
                     frame = make_frame(
                         payload=bytes(1),
