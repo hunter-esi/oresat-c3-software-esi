@@ -374,84 +374,14 @@ class ADCSManager(Service):
         logger.info("Start of loop on ADCSManager.")
         logger.debug("The control mode is " + str(self.control_mode.value))
 
-        # check if the modes have been updated externally
-        #self.control_mode = self.node.od["adcs_manager"]["control_mode"]
-        #self.guidance_mode = self.node.od["adcs_manager"]["mode"]
-        #self.pointing_reference = self.node.od["adcs_manager"]["pointing_reference"]
+        # TODO: check if the modes have been updated externally
 
         logger.debug("The control mode is " + str(self.control_mode.value))
         logger.debug("The guidance mode is " + str(self.guidance_mode.value))
         logger.debug("The pointing reference is " + str(self.pointing_reference.value))
 
         if self.control_mode.value == ControlMode.IDLE:
-            # temporarily have the adcs idle mode be 10 seconds.
-            self.sleep_ms(10e3)
-            return
-
-        if self.control_mode.value == ControlMode.CUSTOM:
-            logger.info("ADCSManager using CUSTOM control mode.")
-            logger.warning("CUSTOM control mode is currently for MAG calibration.")
-
-            # for calibration:
-            #   make sure magnetorquers are off
-            #   make sure the satellite is not turning or tumbling
-            #   make sure the reaction wheel speeds are the same (or at zero)
-            logger.info("Turning off magnetorquers.")
-            # self._command_mtb(np.array([0, 0, 0]))
-
-            # wait two seconds before reading
-            self.sleep_ms(2e3)
-            # Get the initial magnetic field with MTs off
-            logger.info("Measuring initial magnetic field.")
-            mag_field_init = self.get_magnetometer_data()
-            logger.debug("Initial b_x: " + str(mag_field_init[0]))
-            logger.debug("Initial b_y: " + str(mag_field_init[1]))
-            logger.debug("Initial b_z: " + str(mag_field_init[2]))
-            # wait two seconds before turning on X- magnetorquer
-            self.sleep_ms(2e3)
-
-            logger.info("Sending positive signal to X-MT.")
-            # self._command_mtb(np.array([100e3, 0, 0]))
-
-            # wait two seconds before reading
-            self.sleep_ms(2e3)
-            # Get the initial magnetic field with MTs off
-            logger.info("Measuring magnetic field with positive X-MT signal.")
-            mag_pos_x = self.get_magnetometer_data()
-            logger.debug("pos x b_x: " + str(mag_pos_x[0]))
-            logger.debug("pos x b_y: " + str(mag_pos_x[1]))
-            logger.debug("pos x b_z: " + str(mag_pos_x[2]))
-
-            # wait two seconds before turning on X- magnetorquer
-            self.sleep_ms(2e3)
-
-            logger.info("Sending negative signal to X-MT.")
-            # self._command_mtb(np.array([-100e3, 0, 0]))
-
-            # wait two seconds before reading
-            self.sleep_ms(2e3)
-            # Get the initial magnetic field with MTs off
-            logger.info("Measuring magnetic field with negative X-MT signal.")
-            mag_neg_x = self.get_magnetometer_data()
-            logger.debug("neg x b_x: " + str(mag_neg_x[0]))
-            logger.debug("neg x b_y: " + str(mag_neg_x[1]))
-            logger.debug("neg x b_z: " + str(mag_neg_x[2]))
-            # wait two seconds before turning on X- magnetorquer
-            self.sleep_ms(2e3)
-            # calculate deltas
-            logger.info("Delta x b_x: " + str(mag_pos_x[0] - mag_neg_x[0]))
-            logger.info("Delta x b_y: " + str(mag_pos_x[1] - mag_neg_x[1]))
-            logger.info("Delta x b_z: " + str(mag_pos_x[2] - mag_neg_x[2]))
-
-            # set control mode back to idle
-
-            logger.info("Sending zero to X-MT.")
-            # self._command_mtb(np.array([0, 0, 0]))
-
-            logger.info("Magnetorquer sign test complete.")
-
-            self.sleep_ms(10e3)
-            self.control_mode.value = ControlMode.IDLE
+            self.sleep_ms(300e3)
             return
 
         if (
