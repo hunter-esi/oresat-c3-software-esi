@@ -365,10 +365,52 @@ class ADCSManager(Service):
         )
 
     def _command_magnetorquer_current(self, desired_current: np.ndarray) -> None:
-        """Send current values to magnetorquers."""
-        self.node.sdo_write("adcs", "magnetorquer", "current_x_setpoint", desired_current[0])
-        self.node.sdo_write("adcs", "magnetorquer", "current_y_setpoint", desired_current[1])
-        self.node.sdo_write("adcs", "magnetorquer", "current_z_setpoint", desired_current[2])
+        """Send current values to magnetorquers.
+
+        Parameters
+        ----------
+        desired_current:
+            3x1 array of current to send to magnetorquer setpoints (currently uA).
+        """
+        # TODO: before sending SDOs, check if the card handling the
+        # SDO request is sending heartbeats
+
+        # Attempt to send commands to all magnetorquers.
+        try:
+            logger.debug("Sending command to x-magnetorquer...")
+            self.node.sdo_write("adcs", "magnetorquer", "current_x_setpoint", desired_current[0])
+
+            logger.debug("Sending command to y-magnetorquer...")
+            self.node.sdo_write("adcs", "magnetorquer", "current_y_setpoint", desired_current[1])
+
+            logger.debug("Sending command to z-magnetorquer...")
+            self.node.sdo_write("adcs", "magnetorquer", "current_z_setpoint", desired_current[2])
+
+            # once the sdo writes are successful, return to end
+            return
+        except Exception as e:
+            logger.error(f"Unable to send SDO commands to all magnetorquers: {e}")
+
+        # if it was not sucessful, try to turn them off one at a time
+        try:
+            logger.debug("Attempting to turn off the x-magnetorquer...")
+            self.node.sdo_write("adcs", "magnetorquer", "current_x_setpoint", 0)
+        except Exception as e:
+            logger.error(f"Unable to send SDO command to turn off x-magnetorquer: {e}")
+
+        try:
+            logger.debug("Attempting to turn off the y-magnetorquer...")
+            self.node.sdo_write("adcs", "magnetorquer", "current_y_setpoint", 0)
+        except Exception as e:
+            logger.error(f"Unable to send SDO command to turn off y-magnetorquer: {e}")
+
+        try:
+            logger.debug("Attempting to turn off the z-magnetorquer...")
+            self.node.sdo_write("adcs", "magnetorquer", "current_z_setpoint", 0)
+        except Exception as e:
+            logger.error(f"Unable to send SDO command to turn off z-magnetorquer: {e}")
+
+        return
 
     def on_loop(self) -> None:
         logger.info("Start of loop on ADCSManager.")
