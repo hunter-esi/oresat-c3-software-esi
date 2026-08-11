@@ -37,6 +37,10 @@ class PayloadService(Service):
         self._state = self.node.od["payload_ctrl"]["state"]
         self._enabled = self.node.od["payload_ctrl"]["enabled"]
 
+        bat_1_rec = self.node.od["battery_1"]
+        self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
+        self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
+
         if self._mission.__str__() == "osiris_b1":
             logger.info("creating osiris payload handler")
             # self._payload_handler = BeeconHandler(self._state)
