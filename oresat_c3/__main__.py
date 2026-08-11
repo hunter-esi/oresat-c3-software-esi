@@ -153,7 +153,7 @@ def main():
     )
     adcs_mgr_service = ADCSManager()
     mdb_service = MissionDatabaseService(node_mgr_service)
-    payload_service = PayloadService(node_mgr_service, config.mission, mock_hw)
+    payload_service = PayloadService(node_mgr_service, config.mission, mock_hw == "all")
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)

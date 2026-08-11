@@ -99,8 +99,7 @@ class BeeconHandler():
 
 
 class PiPlasmaHandler():
-    # THRESHOLD = 65536
-    THRESHOLD = 1024
+    THRESHOLD = 524288 # 2^19, ~1 orbit of data.
 
     def __init__(
         self,
@@ -120,9 +119,16 @@ class PiPlasmaHandler():
         if self._state.value > 1:
             self._state.value = 1
 
+    def __del__(self):
+        if (
+            self._node_mgr.node_status("piplasma_sci") == 1 or
+            self._node_mgr.node_status("piplasma_sci") == 2
+        ):
+            self._node_mgr.disable("piplasma_sci")
+
     def loop(self):
         if self._mock:
-            time.sleep()
+            time.sleep(10)
             return
         state_val = self._state.value
         if state_val == 0:
@@ -147,14 +153,15 @@ class PiPlasmaHandler():
             else: # turn the card on.
                 self._node_mgr.enable("piplasma_sci")
         elif state_val == 2:
+            self._handle_file()
             if self._piplasma is None:
                 logger.error("Piplasma reached state 2 before state 1!")
                 self._state.value = 1
                 return
-            self._handle_file()
             while self._piplasma.in_waiting > 72: # it may be better
+                self._handle_file()
                 out = self._piplasma.read_until(expected=b"\n")
-                self._store.write_data(out)
+                self._store.write_data(self._file, out, offset=0, from_what=2)
                 self._filesize += len(out)
         time.sleep(0.1)
 
@@ -164,8 +171,8 @@ class PiPlasmaHandler():
             logger.info(
                 f"Piplasma payload handler has no active file. Creating new file: {self._file}"
             )
-        elif self._filesize >= self.THRESHOLD:
-            self._file
+        elif self._filesize > self.THRESHOLD:
+            self._filesize = 0
             self._make_file()
             logger.info(
                 f"Piplasma payload file has reached threshold. Creating new file: {self._file}"
@@ -174,7 +181,7 @@ class PiPlasmaHandler():
     def _make_file(self):
         timestamp = int(monotonic())
         new_file = Path(f"c3_piplasma_{timestamp}.txt")
-        while not self._store.file_exists(path=new_file):
+        while self._store.file_exists(path=new_file):
             timestamp += 1
             new_file = Path(f"c3_piplasma_{timestamp}.txt")
         self._store.create_file(new_file)
