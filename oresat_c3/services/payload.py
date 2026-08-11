@@ -7,6 +7,7 @@ of extending it to other payloads later.
 # unused imports will be used for piplasma and osiris.
 import time
 from pathlib import Path
+from threading import Event
 from time import monotonic
 
 import serial
@@ -20,12 +21,17 @@ from .node_manager import NodeManagerService
 
 
 class PayloadService(Service):
+    BAT_LEVEL_LOW = 6500
+    BAT_LEVEL_HIGH = 7500
+
     def __init__(self, node_mgr: NodeManagerService, mission: Mission, mock: bool = True) -> None:
         super().__init__()
         self._node_mgr = node_mgr
         self._mission = mission
         self._mock = mock
         self._payload_handler = None
+        # event used to centrally tell payload services to powersave / resume
+        self._power_indicatior_event = Event()
 
     def on_start(self) -> None:
         self._state = self.node.od["payload_ctrl"]["state"]
@@ -37,7 +43,11 @@ class PayloadService(Service):
         elif self._mission.__str__() == "prism":
             logger.info("creating prism payload handler")
             self._payload_handler = PiPlasmaHandler(
-                self._state, self._node_mgr, self.node.fwrite_cache, self._mock
+                self._state,
+                self._node_mgr,
+                self.node.fwrite_cache,
+                self._power_indicatior_event,
+                self._mock
             )
         elif self._mission.__str__() == "beecon":
             logger.info("creating beecon payload handler")
@@ -62,6 +72,25 @@ class PayloadService(Service):
                 self._payload_handler = None
         else:
             time.sleep(10)
+        if self._power_indicatior_event.is_set() and self.power_high():
+            self._power_indicatior_event.clear()
+        elif not self._power_indicatior_event.is_set() and self.power_low():
+            self._power_indicatior_event.set()
+
+    def power_low(self):
+        """Returns true if the battery is below the low threshold"""
+        return (
+            self._vbatt_bp1_obj.value < self.BAT_LEVEL_LOW
+            and self._vbatt_bp2_obj.value < self.BAT_LEVEL_LOW
+        )
+
+    def power_high(self):
+        """Returns true if the battery is above the high threshold"""
+        return (
+            self._vbatt_bp1_obj.value > self.BAT_LEVEL_HIGH
+            and self._vbatt_bp2_obj.value > self.BAT_LEVEL_HIGH
+        )
+
 
 
 class BeeconHandler():
@@ -106,6 +135,7 @@ class PiPlasmaHandler():
         in_state: ODVariable,
         node_mgr: NodeManagerService,
         store: CacheStore,
+        pwr_event: Event,
         mock: bool
     ):
         self._state = in_state
@@ -114,6 +144,7 @@ class PiPlasmaHandler():
         self._filesize = 0
         self._file = None
         self._piplasma = None
+        self._pwr_event = pwr_event
         self._mock = mock
 
         if self._state.value > 1:
@@ -130,40 +161,61 @@ class PiPlasmaHandler():
         if self._mock:
             time.sleep(10)
             return
+
         state_val = self._state.value
         if state_val == 0:
-            if (
-                self._node_mgr.node_status("piplasma_sci") == 1 or
-                self._node_mgr.node_status("piplasma_sci") == 2
-            ):
-                self._node_mgr.disable("piplasma_sci")
-            if self._piplasma is not None:
-                self._piplasma.close()
-                self._piplasma = None
-            time.sleep(1)
+            self._idle
         elif state_val == 1:
-            sci_status = self._node_mgr.node_status("piplasma_sci")
-            if sci_status == 1: # wait for the card to boot.
-                time.sleep(1)
-            elif sci_status == 2: # on. Goto state 2.
-                self._piplasma = serial.Serial(port="/dev/ttyS3", baudrate=115200)
-                self._state.value = 2
-            elif sci_status == 4 or sci_status == 0xFF: # nothing to do.
-                time.sleep(10)
-            else: # turn the card on.
-                self._node_mgr.enable("piplasma_sci")
+            self._boot_piplasma()
         elif state_val == 2:
-            self._handle_file()
-            if self._piplasma is None:
-                logger.error("Piplasma reached state 2 before state 1!")
-                self._state.value = 1
-                return
-            while self._piplasma.in_waiting > 72: # it may be better
-                self._handle_file()
-                out = self._piplasma.read_until(expected=b"\n")
-                self._store.write_data(self._file, out, offset=0, from_what=2)
-                self._filesize += len(out)
+            self._process_input()
+        elif state_val == 3:
+            self._powersave()
         time.sleep(0.1)
+
+    def _idle(self):
+        if (
+            self._node_mgr.node_status("piplasma_sci") == 1 or
+            self._node_mgr.node_status("piplasma_sci") == 2
+        ):
+            self._node_mgr.disable("piplasma_sci")
+        if self._piplasma is not None:
+            self._piplasma.close()
+            self._piplasma = None
+        time.sleep(1)
+
+    def _boot_piplasma(self):
+        sci_status = self._node_mgr.node_status("piplasma_sci")
+        if sci_status == 1: # wait for the card to boot.
+            time.sleep(1)
+        elif sci_status == 2: # on. Goto state 2.
+            self._piplasma = serial.Serial(port="/dev/ttyS3", baudrate=115200)
+            self._state.value = 2
+        elif sci_status == 4 or sci_status == 0xFF: # nothing to do.
+            time.sleep(10)
+        else: # turn the card on.
+            self._node_mgr.enable("piplasma_sci")
+
+    def _process_input(self):
+        self._handle_file()
+        if self._piplasma is None:
+            logger.error("Piplasma reached state 2 before state 1!")
+            self._state.value = 1
+            return
+        while self._piplasma.in_waiting > 72: # it may be better
+            self._handle_file()
+            out = self._piplasma.read_until(expected=b"\n")
+            self._store.write_data(self._file, out, offset=0, from_what=2)
+            self._filesize += len(out)
+
+        # should we powersave?
+        if self._pwr_event.is_set():
+            self._state.value = 3
+            self._idle()
+
+    def _powersave(self):
+        if not self._pwr_event.is_set():
+            self._state.value = 1
 
     def _handle_file(self) -> None:
         if self._file is None:
