@@ -1,5 +1,6 @@
 """'EDL Service"""
 
+import struct
 from datetime import timedelta
 from pathlib import Path
 from queue import Empty, SimpleQueue
@@ -7,6 +8,12 @@ from time import time
 from typing import Any, Optional, Union
 
 import canopen
+from canopen.objectdictionary.datatypes import (
+    FLOAT_TYPES,
+    INTEGER_TYPES,
+    UNICODE_STRING,
+    VISIBLE_STRING,
+)
 from cfdppy import CfdpState, PacketDestination, get_packet_destination
 from cfdppy.exceptions import NoRemoteEntityConfigFound, SourceFileDoesNotExist
 from cfdppy.mib import (
@@ -263,6 +270,19 @@ class EdlService(Service):
                         raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
                     self.node._on_sdo_write(index, subindex, obj, data)  # pylint: disable=W0212
                 else:
+                    if subindex == 0:
+                        datatype = self.node.od_db[name][index].data_type
+                        subindex = None
+                    else:
+                        datatype = self.node.od_db[name][index][subindex].data_type
+                    if datatype in INTEGER_TYPES:
+                        data = int.from_bytes(data)
+                    elif datatype in FLOAT_TYPES:
+                        data = struct.unpack('f', data)
+                    elif datatype == VISIBLE_STRING:
+                        data = data.decode("utf-8")
+                    elif datatype == UNICODE_STRING:
+                        data = data.decode("utf-16")
                     self.node.sdo_write(name, index, subindex, data)
                 ret = 0
             except canopen.sdo.exceptions.SdoAbortedError as e:
