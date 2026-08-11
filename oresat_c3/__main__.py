@@ -80,6 +80,12 @@ def adcs_template():
     return render_olaf_template("adcs.html", name="ADCS")
 
 
+@rest_api.app.route("/adcs-3d")
+def adcs_3d_template():
+    """Render adcs template which has 3d visualization."""
+    return render_olaf_template("adcs_3d.html", name="ADCS 3D (Magnetometers)")
+
+
 def watchdog():
     """Pet the watchdog app (which pets the watchdog circuit)."""
 
