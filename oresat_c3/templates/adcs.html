@@ -320,6 +320,7 @@
     // if there are more than 4 colors, figure out something else
     let colors = ["#ff9900cc", "#00ff19cc", "#0066ffcc", "#ff00e6cc"];
     for (d_idx in dirs) {
+    
       // shift the plot
       let plotCanvas = document.getElementById("mag_"+dirs[d_idx]+ "_canvas");
       let ctx = plotCanvas.getContext("2d");
@@ -327,13 +328,40 @@
       ctx.putImageData(imageData, 0, 0);
       ctx.clearRect(ctx.canvas.width-1, 0, 1, ctx.canvas.height);
       // for each sensor, update
+      let infoCellElements = [
+        document.createTextNode("Direction: [" + dirs[d_idx] + "] ")
+      ];
+
+      let count = 0;
       for (s_idx in subindex_list) {
         // FIXME: set timeout for await, otherwise it may bog down performance
         let mt_info = await readValue(index, subindex_list[s_idx] +"_"+dirs[d_idx]);
+
+        // update the information
+        if (count == 0) {
+          infoCellElements.push(document.createElement("br"))
+          infoCellElements.push(document.createTextNode("Scale Factor: " + mt_info.scale_factor));
+        }
+        let span = document.createElement('span');
+        span.style = "color: " + colors[s_idx] + ";"
+        span.appendChild
+
+        span.appendChild(document.createElement("br"))
+        span.appendChild(document.createTextNode("Name: [" + index + "] " + mt_info.name))
+        span.appendChild(document.createElement("br"))
+        span.appendChild(document.createTextNode("Value ["+mt_info.low_limit+", "+mt_info.high_limit+"]: "+mt_info.value))
+        span.appendChild(document.createElement("br"))
+        span.appendChild(document.createTextNode("Eng. Value: " + mt_info.eng_value + " " + mt_info.unit))
+        infoCellElements.push(span);
+
         let factor = (plot_max - mt_info.value) / (plot_max - plot_min);
         ctx.fillStyle = colors[s_idx];
         ctx.fillRect(ctx.canvas.width-1, (factor * ctx.canvas.height) - 1, 2, 2);
+        count++;
       }
+      let infoCell = document.getElementById("mag_"+dirs[d_idx]+"_info")
+      // spread the array to unpack the list
+      infoCell.replaceChildren(...infoCellElements);
     }
   }
 
@@ -477,8 +505,8 @@
         "min_z_magnetometer_1", 
         "min_z_magnetometer_2", 
       ],
-      -1000,  // currently the lower limit of the value, milligauss
-      1000    // currently the upper limit of the value, milligauss
+      -10000,  // currently the lower limit of the value, milligauss
+      10000    // currently the upper limit of the value, milligauss
     );
 
     // FIXME: no need to plot these yet, bogs down performance
