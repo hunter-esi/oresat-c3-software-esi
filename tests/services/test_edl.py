@@ -12,6 +12,13 @@ from queue import SimpleQueue
 from time import sleep, time
 from typing import NamedTuple, Optional
 
+from canopen.objectdictionary.datatypes import (
+    FLOAT_TYPES,
+    INTEGER_TYPES,
+    OCTET_STRING,
+    UNICODE_STRING,
+    VISIBLE_STRING,
+)
 from canopen.sdo.exceptions import SdoAbortedError
 from olaf import CanNetwork, MasterNode, NodeStop
 from oresat_configs import Mission, OreSatConfig
@@ -196,7 +203,7 @@ class TestEdl(unittest.TestCase):
 
         make_cmd(
             EdlCommandCode.CO_SDO_WRITE,
-            (0x2C, 0x4000, 0x0, 0x1, (2).to_bytes(4, "little")),
+            (0x2C, 0x4000, 0x0, 0x1, (2).to_bytes(1, "little")),
             self.mock_router.uplink_edl,
         )
         resp_raw = self.mock_router.downlink_edl.get(timeout=1.0)
@@ -204,6 +211,26 @@ class TestEdl(unittest.TestCase):
         response = to_response(resp_raw)
         self.assertEqual(response.code, EdlCommandCode.CO_SDO_WRITE)
         self.assertEqual(response.values[0], (0x05040000))
+        self.assertEqual(self.node.value_set_by_edl, True)
+
+    def test_co_sdo_write_rw_int(self):
+        """
+        6: 5 inputs. expect a uint32 back with the error code, 0 if none. Tests that passed values
+        are converted properly.
+        """
+        self.node.should_fail_test = False
+        self.node.value_set_by_edl = False
+
+        make_cmd(
+            EdlCommandCode.CO_SDO_WRITE,
+            (0x44, 0x4004, 0x1, 1, (23).to_bytes(1, "little")),
+            self.mock_router.uplink_edl,
+        )
+        resp_raw = self.mock_router.downlink_edl.get(timeout=1.0)
+        self.assertTrue(self.mock_router.downlink_edl.empty())
+        response = to_response(resp_raw)
+        self.assertEqual(response.code, EdlCommandCode.CO_SDO_WRITE)
+        self.assertEqual(response.values[0], (0x0))
         self.assertEqual(self.node.value_set_by_edl, True)
 
     def test_co_sync(self):
@@ -479,9 +506,23 @@ class MockMasterNode(MasterNode):
         subindex: int | str | None,
         value: str | float | bytes | bool,
     ) -> None:
-        self.value_set_by_edl = True
-        if self.should_fail_test:
-            raise SdoAbortedError(0x05040000)
+        """The actual writing process needs to be passed the correct datatype."""
+        obj = self._sdo_get_obj(key, index, subindex)
+        if subindex is None:
+            datatype = self._od_db[key][index].data_type
+        else:
+            datatype = self._od_db[key][index][subindex].data_type
+
+        if ((datatype in INTEGER_TYPES and isinstance(value, int))
+        or (datatype in FLOAT_TYPES and isinstance(value, float))
+        or (datatype == VISIBLE_STRING and isinstance(value, str))
+        or (datatype == UNICODE_STRING and isinstance(value, str))
+        or (datatype == OCTET_STRING and isinstance(value, bytes))):
+            self.value_set_by_edl = True
+            if self.should_fail_test:
+                raise SdoAbortedError(0x05040000)
+        else:
+            raise ValueError("SDO not passed correct datatype")
 
     def sdo_read(
         self, key: str, index: int | str, subindex: int | str | None
@@ -615,8 +656,8 @@ class MockNodeManagerService(NodeManagerService):
     def __init__(self):
         self.set_node = 0x0
         self.set_state = 0x0
-        self.opd_addr_to_name = {0x0: "c3", 0x1C: "star_tracker_1"}
-        self.node_id_to_name = {0x1: "c3", 0x2C: "star_tracker_1"}
+        self.opd_addr_to_name = {0x0: "c3", 0x1C: "star_tracker_1", 0x22: "rw_3"}
+        self.node_id_to_name = {0x1: "c3", 0x2C: "star_tracker_1", 0x44: "rw_3"}
         self.opd = MockOpd()
 
     def __del__(self):

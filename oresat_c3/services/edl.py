@@ -361,14 +361,16 @@ class EdlService(Service):
                     data = obj.encode_raw(value)
                 else:
                     if subindex == 0:
-                        subindex = None
-                    value = self.node.sdo_read(name, index, subindex)
+                        effective_subindex = None
+                    else:
+                        effective_subindex = subindex
+                    value = self.node.sdo_read(name, index, effective_subindex)
                     od = self.node.od_db[name]
                     var_index = isinstance(od[index], canopen.objectdictionary.Variable)
-                    if var_index and subindex is None:
+                    if var_index and effective_subindex is None:
                         obj = od[index]
                     elif not var_index:
-                        obj = od[index][subindex]
+                        obj = od[index][effective_subindex]
                     else:
                         raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
                     data = obj.encode_raw(value)
