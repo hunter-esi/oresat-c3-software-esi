@@ -507,17 +507,19 @@ class MockMasterNode(MasterNode):
         value: str | float | bytes | bool,
     ) -> None:
         """The actual writing process needs to be passed the correct datatype."""
-        obj = self._sdo_get_obj(key, index, subindex)
+        self._sdo_get_obj(key, index, subindex)
         if subindex is None:
             datatype = self._od_db[key][index].data_type
         else:
             datatype = self._od_db[key][index][subindex].data_type
 
-        if ((datatype in INTEGER_TYPES and isinstance(value, int))
-        or (datatype in FLOAT_TYPES and isinstance(value, float))
-        or (datatype == VISIBLE_STRING and isinstance(value, str))
-        or (datatype == UNICODE_STRING and isinstance(value, str))
-        or (datatype == OCTET_STRING and isinstance(value, bytes))):
+        if (
+            (datatype in INTEGER_TYPES and isinstance(value, int))
+            or (datatype in FLOAT_TYPES and isinstance(value, float))
+            or (datatype == VISIBLE_STRING and isinstance(value, str))
+            or (datatype == UNICODE_STRING and isinstance(value, str))
+            or (datatype == OCTET_STRING and isinstance(value, bytes))
+        ):
             self.value_set_by_edl = True
             if self.should_fail_test:
                 raise SdoAbortedError(0x05040000)
