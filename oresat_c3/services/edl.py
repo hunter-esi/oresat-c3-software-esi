@@ -1,6 +1,5 @@
 """'EDL Service"""
 
-import struct
 from datetime import timedelta
 from pathlib import Path
 from queue import Empty, SimpleQueue
@@ -8,12 +7,6 @@ from time import time
 from typing import Any, Optional, Union
 
 import canopen
-from canopen.objectdictionary.datatypes import (
-    FLOAT_TYPES,
-    INTEGER_TYPES,
-    UNICODE_STRING,
-    VISIBLE_STRING,
-)
 from cfdppy import CfdpState, PacketDestination, get_packet_destination
 from cfdppy.exceptions import NoRemoteEntityConfigFound, SourceFileDoesNotExist
 from cfdppy.mib import (
@@ -271,18 +264,18 @@ class EdlService(Service):
                     self.node._on_sdo_write(index, subindex, obj, data)  # pylint: disable=W0212
                 else:
                     if subindex == 0:
-                        datatype = self.node.od_db[name][index].data_type
                         subindex = None
+
+                    od = self.node.od_db[name]
+                    var_index = isinstance(od[index], canopen.objectdictionary.Variable)
+                    if var_index and subindex is None:
+                        obj = od[index]
+                    elif not var_index:
+                        obj = od[index][subindex]
                     else:
-                        datatype = self.node.od_db[name][index][subindex].data_type
-                    if datatype in INTEGER_TYPES:
-                        data = int.from_bytes(data)
-                    elif datatype in FLOAT_TYPES:
-                        data = struct.unpack('f', data)
-                    elif datatype == VISIBLE_STRING:
-                        data = data.decode("utf-8")
-                    elif datatype == UNICODE_STRING:
-                        data = data.decode("utf-16")
+                        raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
+                    data = obj.decode_raw(data)
+
                     self.node.sdo_write(name, index, subindex, data)
                 ret = 0
             except canopen.sdo.exceptions.SdoAbortedError as e:
@@ -367,10 +360,12 @@ class EdlService(Service):
                     value = self.node._on_sdo_read(index, subindex, obj)  # pylint: disable=W0212
                     data = obj.encode_raw(value)
                 else:
+                    if subindex == 0:
+                        subindex = None
                     value = self.node.sdo_read(name, index, subindex)
                     od = self.node.od_db[name]
                     var_index = isinstance(od[index], canopen.objectdictionary.Variable)
-                    if var_index and subindex == 0:
+                    if var_index and subindex is None:
                         obj = od[index]
                     elif not var_index:
                         obj = od[index][subindex]
