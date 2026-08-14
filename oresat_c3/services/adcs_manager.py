@@ -364,18 +364,35 @@ class ADCSManager(Service):
             * j_min
         )
 
-    def _command_magnetorquer_current(self, desired_current: np.ndarray) -> None:
+    def _command_magnetorquer_current(self, desired_current: np.ndarray) -> bool:
         """Send current values to magnetorquers.
 
         Parameters
         ----------
         desired_current:
             3x1 array of current to send to magnetorquer setpoints (currently uA).
+
+        Returns
+        -------
+        bool
+            Success in commanding all magnetorquers.
         """
         # TODO: before sending SDOs, check if the card handling the
         # SDO request is sending heartbeats
+        logger.debug(f"Recieved command to set magnetorquer currents to {desired_current}")
+
+        # check if any value happens to be complex
+        # note that if it were complex, it could not be properly rounded
+        # for sending it over the CAN bus
+        if np.iscomplexobj(desired_current):
+            logger.warning("Magnetorquer currents appear to be complex.")
+            logger.warning("Setting magnetorquer currents to real components...")
+            desired_current = np.real(desired_current)
 
         # Attempt to send commands to all magnetorquers.
+        logger.debug(
+            f"About to send the following currents to the magnetorquers: {desired_current}"
+        )
         try:
             logger.debug("Sending command to x-magnetorquer...")
             self.node.sdo_write("adcs", "magnetorquer", "current_x_setpoint", desired_current[0])
@@ -387,7 +404,7 @@ class ADCSManager(Service):
             self.node.sdo_write("adcs", "magnetorquer", "current_z_setpoint", desired_current[2])
 
             # once the sdo writes are successful, return to end
-            return
+            return True
         except Exception as e:
             logger.error(f"Unable to send SDO commands to all magnetorquers: {e}")
 
@@ -410,20 +427,19 @@ class ADCSManager(Service):
         except Exception as e:
             logger.error(f"Unable to send SDO command to turn off z-magnetorquer: {e}")
 
-        return
+        return False
 
     def on_loop(self) -> None:
         logger.info("Start of loop on ADCSManager.")
-        logger.debug("The control mode is " + str(self.control_mode.value))
 
         # TODO: check if the modes have been updated externally
 
-        logger.debug("The control mode is " + str(self.control_mode.value))
-        logger.debug("The guidance mode is " + str(self.guidance_mode.value))
-        logger.debug("The pointing reference is " + str(self.pointing_reference.value))
+        logger.debug(f"The control mode is {self.control_mode.value}")
+        logger.debug(f"The guidance mode is {self.guidance_mode.value}")
+        logger.debug(f"The pointing reference is {self.pointing_reference.value}")
 
         if self.control_mode.value == ControlMode.IDLE:
-            self.sleep_ms(300e3)
+            self.sleep_ms(30e3)
             return
 
         if (
@@ -438,6 +454,7 @@ class ADCSManager(Service):
                 logger.error("Incorrect sensor data type")
                 self.sleep_ms(5000)
                 return
+
             omega = imu_data.gyro
             star_tracker_output = self._sensor_data["star_tracker_1"]
             if (
@@ -459,13 +476,53 @@ class ADCSManager(Service):
         # portion of the code, and just defines the target which is fed into the
         # control algorithms
 
-        gps_data = self._sensor_data["gps"].data
+        # retrieve IMU data
+        # TODO: wrap this in get_sensor_data
+        if "adcs" not in self._sensor_data.keys():
+            logger.error("ADCS data is not yet in sensor data.")
+            logger.error("No data recieved from ADCS yet.")
+            self.sleep(5)
+            return
+        try:
+            imu_data = self._sensor_data["adcs"].data
+        except Exception as e:
+            logger.error(f"Some other ADCS data error occured: {e}")
+            self.sleep(5)
+            return
+        if not isinstance(imu_data, IMUData):
+            logger.error("Incorrect sensor data type")
+            self.sleep(5)
+            return
+        omega = imu_data.gyro
+
+        # retreive GPS data
+        # TODO: wrap this in get_sensor_data()
+        if "gps" not in self._sensor_data.keys():
+            logger.error("GPS data is not yet in sensor data.")
+            logger.error("No data recieved from GPS yet.")
+            self.sleep(5)
+            return
+        try:
+            gps_data = self._sensor_data["gps"].data
+        except Exception as e:
+            logger.error(f"Some other GPS data error occured: {e}")
+            self.sleep(5)
+            return
         if not isinstance(gps_data, GPSData):
             logger.error("Incorrect sensor data type")
-            self.sleep_ms(5000)
+            self.sleep(5)
             return
+
+        # TODO: target calculation based on guidance mode is not needed depending
+        # on the control mode, change this only only occur on certain steps
         r_ecef = np.asarray(gps_data.position)
+        if np.linalg.norm(r_ecef) < 100:
+            logger.debug(f"GPS position: {r_ecef}")
+            logger.warning("GPS position data appears to be bogus")
         v_ecef = np.asarray(gps_data.velocity)
+        if np.linalg.norm(v_ecef) < 100:
+            logger.debug(f"GPS velocity: {v_ecef}")
+            logger.warning("GPS velocity data appears to be bogus")
         t = self.skyfield_timescale.now()  # set ephemeris calculation time
         eci_2_ecef = self.skyfield_EOP.rotation_at(t)  # inertial -> ECEF rotation matrix
         # used to get correct facing for star tracker
@@ -495,12 +552,7 @@ class ADCSManager(Service):
 
         self.update_target(new_target)
 
-        imu_data = self._sensor_data["adcs"].data
-        if not isinstance(imu_data, IMUData):
-            logger.error("Incorrect sensor data type")
-            self.sleep_ms(5000)
-            return
-        omega = imu_data.gyro
+        # Control Modes
         if self.control_mode.value in (ControlMode.RW_POINTING, ControlMode.THERMAL_REORIENT):
             # get sensor data and modify for consumption by control algorithms
             wheel_speeds = (
@@ -584,15 +636,50 @@ class ADCSManager(Service):
                 self.control_mode.value = ControlMode.THERMAL_SPINUP.value
 
         elif self.control_mode.value in (ControlMode.DETUMBLE, ControlMode.THERMAL_DETUMBLE):
-            # enter 3-step passive thermal-spin mode by first detumbling with magnetorquers
+            # first, check if conditions have been satisfied for regular detumbling
+            if self.control_mode.value == ControlMode.DETUMBLE and np.linalg.norm(omega) < 0.002:
+                logger.info(f"DETUMBLE Control Mode satisfied with omega values of {omega}.")
+                logger.debug("Attempting to set magnetorquer currents to zero...")
+                success = self._command_magnetorquer_current(desired_current=np.array([0, 0, 0]))
+                if not success:
+                    logger.warning("Unable to turn of magnetorquers")
+                    logger.debug("Attempting to set magnetorquer currents to zero one more time...")
+                    success = self._command_magnetorquer_current(
+                        desired_current=np.array([0, 0, 0])
+                    )
+                    if not success:
+                        logger.error(
+                            "Unable to turn of magnetorquers, but exiting DETUMBLE mode anyway."
+                        )
+                logger.info("Changing control mode from DETUMBLE to IDLE")
+                self.control_mode.value = ControlMode.IDLE.value
+                return
+
+            # if still detumbling, check the angular speeds
+            logger.debug(f"Angular speed values: {omega}")
+
+            # get the magnetic field data and make sure it is good
             b = self.get_magnetometer_data()
+            logger.debug(f"Magnetic field values: {b}")
+            if np.linalg.norm(b) == 0:
+                logger.warning("Magnetic field values are zero.")
+                logger.error("Magnetic field values appear to be bogus.")
+                self.sleep(5)
+                return
+
             # detumble controller as defined by Markley & Crassidis
             # this equation is for calculating the magnetic dipole
             desired_dipoles = self.detumble_gain / (np.linalg.norm(b) ** 2) * np.cross(omega, b)
+            logger.debug(f"Calculated desired dipoles: {desired_dipoles}")
+
             # send the dipole commands to magnetoruqers
             m_cmd = desired_dipoles * self.mag_constants
             self._command_magnetorquer_current(desired_current=m_cmd)
 
+            # If in the first of 3-step passive thermal-spin mode,
+            # go to next mode.
+            # FIXME: The current object dictionary has omega as an integer of
+            # deg/s, need a different value if less than 1 deg/s is desired.
             if self.control_mode.value == ControlMode.THERMAL_DETUMBLE and np.all(
                 np.abs(omega) < 1e-4
             ):
@@ -616,7 +703,14 @@ class ADCSManager(Service):
                 self._command_magnetorquer_current(desired_current=m_cmd)
 
         elif self.control_mode.value == ControlMode.MTB_POINTING:
+            # Get the magnetic field data
             b = self.get_magnetometer_data()
+            if np.linalg.norm(b) == 0:
+                logger.warning("Magnetic field values are zero.")
+                logger.error("Magnetic field values appear to be bogus.")
+                self.sleep(5)
+                return
+
             star_tracker_output = self.get_sensor_data("star_tracker_1")
             if (
                 star_tracker_output
