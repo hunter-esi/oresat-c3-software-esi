@@ -32,8 +32,11 @@ class PayloadService(Service):
         self._payload_handler = None
         # event used to centrally tell payload services to powersave / resume
         self._power_indicatior_event = Event()
+        self._power_indicatior_event.clear()
 
     def on_start(self) -> None:
+        time.sleep(30)
+
         self._state = self.node.od["payload_ctrl"]["state"]
         self._enabled = self.node.od["payload_ctrl"]["enabled"]
 
@@ -64,6 +67,9 @@ class PayloadService(Service):
                 "Payload Service started despite mission not having a compatable payload."
             )
 
+        if (self._vbatt_bp1_obj.value < 2000 and self._vbatt_bp2_obj.value < 2000):
+            logger.error("Battery is not giving coherent data!")
+
     def on_loop(self) -> None:
         if not self._enabled.value:
             time.sleep(10)
@@ -77,8 +83,10 @@ class PayloadService(Service):
         else:
             time.sleep(10)
         if self._power_indicatior_event.is_set() and self.power_high():
+            logger.warning("clearing power indicator")
             self._power_indicatior_event.clear()
         elif not self._power_indicatior_event.is_set() and self.power_low():
+            logger.warning("setting power indicator")
             self._power_indicatior_event.set()
 
     def power_low(self):
@@ -94,7 +102,6 @@ class PayloadService(Service):
             self._vbatt_bp1_obj.value > self.BAT_LEVEL_HIGH
             and self._vbatt_bp2_obj.value > self.BAT_LEVEL_HIGH
         )
-
 
 
 class BeeconHandler():
