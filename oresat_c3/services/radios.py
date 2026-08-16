@@ -107,7 +107,7 @@ class RadiosService(Service):
         self._sband_status = self.node.od["sdr_ctrl"]["status"]
         self.node.add_sdo_callbacks("sdr_ctrl", "should_enable", None, self._sband_should_enable_cb)
 
-        if "sdr" in self.node._od_db: # not self._mock_hw and
+        if "sdr" in self.node._od_db:  # not self._mock_hw and
             logger.info("creating sband radio class")
             self.sband = SbandRadio(self.node, self._node_mgr, self._sband_status)
         else:
@@ -274,9 +274,7 @@ class RadiosService(Service):
         try:
             sband_rnode = self.node.remote_nodes["sdr"]
             with sband_rnode.sdo['tx_data'].open(
-                'wb',
-                size=len(message),
-                block_transfer=True
+                'wb', size=len(message), block_transfer=True
             ) as outfile:
                 outfile.write(message)
         except Exception as e:  # pylint: disable=W0718
@@ -436,7 +434,7 @@ class SbandRadio(Radio):
     # 4: graceful shutdown.
     # 255: error.
 
-    SDO_FAULT_LIMIT = 5 # number of failed sdos before going to 0xFF state.
+    SDO_FAULT_LIMIT = 5  # number of failed sdos before going to 0xFF state.
 
     def __init__(self, node: MasterNode, node_mgr: NodeManagerService, status: ODVariable):
         """Request gpio."""
@@ -457,10 +455,10 @@ class SbandRadio(Radio):
         elif self._state == 1:
             node_status = self._node_mgr.node_status("sdr")
             logger.debug(f"nodemgr status of sdr: {node_status}.")
-            if node_status == 2: # The sdr is powered on.
+            if node_status == 2:  # The sdr is powered on.
                 self._send_start_cmd()
                 self._state = 2
-            elif node_status == 0xFF: # dead
+            elif node_status == 0xFF:  # dead
                 self._state = 0xFF
                 self.status.value = self._state
                 self.disable()

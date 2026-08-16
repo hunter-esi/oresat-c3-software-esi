@@ -54,12 +54,12 @@ class PayloadService(Service):
                 self._node_mgr,
                 self.node.fwrite_cache,
                 self._power_indicatior_event,
-                self._mock
+                self._mock,
             )
         elif self._mission.__str__() == "beecon":
             logger.info("creating beecon payload handler")
             self._payload_handler = BeeconHandler(
-                self._state,  self.node.od["beacon"]["delay"], self._mock
+                self._state, self.node.od["beacon"]["delay"], self._mock
             )
         else:
             logger.error("Payload Service started despite mission not having a compatable payload.")
@@ -67,7 +67,7 @@ class PayloadService(Service):
                 "Payload Service started despite mission not having a compatable payload."
             )
 
-        if (self._vbatt_bp1_obj.value < 2000 and self._vbatt_bp2_obj.value < 2000):
+        if self._vbatt_bp1_obj.value < 2000 and self._vbatt_bp2_obj.value < 2000:
             logger.error("Battery is not giving coherent data!")
 
     def on_loop(self) -> None:
@@ -104,7 +104,7 @@ class PayloadService(Service):
         )
 
 
-class BeeconHandler():
+class BeeconHandler:
     # Beecon state pseudoenum:
     # 0: off
     # 1: on
@@ -112,11 +112,7 @@ class BeeconHandler():
     _BEECON_DELAY = 10
 
     def __init__(
-        self,
-        in_state: ODVariable,
-        oresat_beacon_timeout: ODVariable,
-        pwr_event: Event,
-        mock: bool
+        self, in_state: ODVariable, oresat_beacon_timeout: ODVariable, pwr_event: Event, mock: bool
     ) -> None:
         self._state = in_state
         self._ore_beacon = oresat_beacon_timeout
@@ -159,8 +155,8 @@ class BeeconHandler():
             self._state.value = 1
 
 
-class PiPlasmaHandler():
-    THRESHOLD = 524288 # 2^19, ~1 orbit of data.
+class PiPlasmaHandler:
+    THRESHOLD = 524288  # 2^19, ~1 orbit of data.
 
     def __init__(
         self,
@@ -168,7 +164,7 @@ class PiPlasmaHandler():
         node_mgr: NodeManagerService,
         store: CacheStore,
         pwr_event: Event,
-        mock: bool
+        mock: bool,
     ):
         self._state = in_state
         self._node_mgr = node_mgr
@@ -184,8 +180,8 @@ class PiPlasmaHandler():
 
     def __del__(self):
         if (
-            self._node_mgr.node_status("piplasma_sci") == 1 or
-            self._node_mgr.node_status("piplasma_sci") == 2
+            self._node_mgr.node_status("piplasma_sci") == 1
+            or self._node_mgr.node_status("piplasma_sci") == 2
         ):
             self._node_mgr.disable("piplasma_sci")
 
@@ -207,8 +203,8 @@ class PiPlasmaHandler():
 
     def _idle(self):
         if (
-            self._node_mgr.node_status("piplasma_sci") == 1 or
-            self._node_mgr.node_status("piplasma_sci") == 2
+            self._node_mgr.node_status("piplasma_sci") == 1
+            or self._node_mgr.node_status("piplasma_sci") == 2
         ):
             self._node_mgr.disable("piplasma_sci")
         if self._piplasma is not None:
@@ -218,14 +214,14 @@ class PiPlasmaHandler():
 
     def _boot_piplasma(self):
         sci_status = self._node_mgr.node_status("piplasma_sci")
-        if sci_status == 1: # wait for the card to boot.
+        if sci_status == 1:  # wait for the card to boot.
             time.sleep(1)
-        elif sci_status == 2: # on. Goto state 2.
+        elif sci_status == 2:  # on. Goto state 2.
             self._piplasma = serial.Serial(port="/dev/ttyS3", baudrate=115200)
             self._state.value = 2
-        elif sci_status == 4 or sci_status == 0xFF: # nothing to do.
+        elif sci_status == 4 or sci_status == 0xFF:  # nothing to do.
             time.sleep(10)
-        else: # turn the card on.
+        else:  # turn the card on.
             self._node_mgr.enable("piplasma_sci")
 
     def _process_input(self):
@@ -234,7 +230,7 @@ class PiPlasmaHandler():
             logger.error("Piplasma reached state 2 before state 1!")
             self._state.value = 1
             return
-        while self._piplasma.in_waiting > 72: # it may be better
+        while self._piplasma.in_waiting > 72:  # it may be better
             self._handle_file()
             out = self._piplasma.read_until(expected=b"\n")
             self._store.write_data(self._file, out, offset=0, from_what=2)
