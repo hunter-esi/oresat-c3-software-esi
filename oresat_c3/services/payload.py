@@ -111,10 +111,18 @@ class BeeconHandler():
     _I2C_BUS_NUM = 2
     _BEECON_DELAY = 10
 
-    def __init__(self, in_state: ODVariable, oresat_beacon_timeout: ODVariable, mock: bool) -> None:
+    def __init__(
+        self,
+        in_state: ODVariable,
+        oresat_beacon_timeout: ODVariable,
+        pwr_event: Event,
+        mock: bool
+    ) -> None:
         self._state = in_state
         self._ore_beacon = oresat_beacon_timeout
         self._ore_beacon_default = self._ore_beacon.value
+        self._pwr_event = pwr_event
+
         self._beecon_node = OpdNode(self._I2C_BUS_NUM, "beecon", 0x10, mock=mock)
         self._beecon_node.configure()
         if not self._beecon_node.probe():
@@ -124,7 +132,6 @@ class BeeconHandler():
     def loop(self) -> None:
         """Runs the beecon state machine. Makes sure the beecon is on or off, depending on state"""
         state_val = self._state.value
-        logger.warning("looping beecon state machine")
         if state_val == 0:
             if self._beecon_node.is_enabled:
                 self._ore_beacon.value = self._ore_beacon_default
@@ -133,9 +140,23 @@ class BeeconHandler():
             if not self._beecon_node.is_enabled:
                 self._ore_beacon.value = 0
                 self._beecon_node.enable()
+            self._check_powersave()
+        elif state_val == 2:
+            if self._beecon_node.is_enabled:
+                self._ore_beacon.value = self._ore_beacon_default
+                self._beecon_node.disable()
+            self._check_powergood()
         else:
             logger.error("beecon service got incoherent state")
         time.sleep(self._BEECON_DELAY)
+
+    def _check_powersave(self):
+        if self._pwr_event.is_set():
+            self._state.value = 2
+
+    def _check_powergood(self):
+        if not self._pwr_event.is_set():
+            self._state.value = 1
 
 
 class PiPlasmaHandler():
