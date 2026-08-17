@@ -40,9 +40,9 @@ class MissionDatabaseService(Service):
         self._active_timeout = self.node.od["mdb"]["active_timeout"]
         self._idle_timeout = self.node.od["mdb"]["idle_timeout"]
 
-        bat_2_rec = self.node.od["battery_1"]
-        self._vbatt_bp1_obj = bat_2_rec["pack_1_vbatt"]
-        self._vbatt_bp2_obj = bat_2_rec["pack_2_vbatt"]
+        bat_1_rec = self.node.od["battery_1"]
+        self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
+        self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
 
     def on_loop(self) -> None:
         """"""
@@ -73,7 +73,7 @@ class MissionDatabaseService(Service):
 
         if (
             self.is_bat_lvl_good is False
-            or self._enabled_time - monotonic() > self._active_timeout.value
+            or monotonic() - self._enabled_time > self._active_timeout.value
         ):
             self._idle()
         self.sleep(self._refresh_delay.value)
