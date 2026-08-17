@@ -228,15 +228,17 @@ class AntennasC3v7:
             self._pz_end = Max7310(i2c_bus_num, 0x14)
             self._mz_end = Max7310(i2c_bus_num, 0x15)
             self._mz_mid = Max7310(i2c_bus_num, 0x16)
+            self._pz_mid = Max7310(i2c_bus_num, 0x17)
         else:
             self._pz_end = MockMax7310(i2c_bus_num, 0x14, 0)
             self._mz_end = MockMax7310(i2c_bus_num, 0x15, 0)
             self._mz_mid = MockMax7310(i2c_bus_num, 0x16, 0)
+            self._pz_mid = MockMax7310(i2c_bus_num, 0x17, 0)
 
     def deploy(self, timeout: int, delay_between: int) -> None:
         """
         Deploy the plus z endcard (helical), then the minus z endcard (monopole), then the
-        minus z midcard (ESI deployable solar wing).
+        minus z midcard (ESI deployable solar wing), then the plus z midcard (ESI).
 
         Parameters
         ----------
@@ -253,6 +255,9 @@ class AntennasC3v7:
         sleep(delay_between)
         logger.info("Attempting minus z mid card firing.")
         self._deploy_card(self._mz_mid, timeout, "minus z mid")
+        sleep(delay_between)
+        logger.info("Attempting plus z mid card firing.")
+        self._deploy_card(self._pz_mid, timeout, "plus z mid")
 
     def _deploy_card(self, card: Max7310, timeout: int, name: str) -> None:
         """

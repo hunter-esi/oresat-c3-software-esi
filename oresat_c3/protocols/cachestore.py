@@ -71,13 +71,18 @@ class CacheStore(VirtualFilestore, OreSatFileCache):
                         return
             raise FileNotFoundError(file)
 
-    def write_data(self, file: Path, data: bytes, offset: Optional[int] = None) -> None:
+    def write_data(
+        self, file: Path, data: bytes, offset: Optional[int] = None, from_what: Optional[int] = None
+    ) -> None:
         with self._lock:
             for f in self._data:
                 if file.name == f.name:
                     with open(self._dir + f.name, "r+b") as wf:
                         if offset is not None:
-                            wf.seek(offset)
+                            if from_what is not None:
+                                wf.seek(offset, from_what)
+                            else:
+                                wf.seek(offset)
                         wf.write(data)
                         return
             raise FileNotFoundError(file)

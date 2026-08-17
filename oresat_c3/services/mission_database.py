@@ -20,11 +20,6 @@ class MissionDatabaseService(Service):
         super().__init__()
         self._node_mgr_service = node_mgr_service
 
-        # This should eventually be defined by something in oresat configs.
-        # For now will be hardcoded.
-        self._refresh_delay = 0
-        self._data_per_file = 0
-        self._max_num_files = 0
         self.next_gps_index = 1
         self.data = ""
         self.current_datapoints = 0
@@ -40,13 +35,14 @@ class MissionDatabaseService(Service):
 
         self.active = self.node.od["mdb"]["active"]
         self._refresh_delay = self.node.od["mdb"]["refresh_delay"]
+        self._max_num_files = self.node.od["mdb"]["max_num_files"]
         self._data_per_file = self.node.od["mdb"]["data_per_file"]
         self._active_timeout = self.node.od["mdb"]["active_timeout"]
         self._idle_timeout = self.node.od["mdb"]["idle_timeout"]
 
-        bat_2_rec = self.node.od["battery_2"]
-        self._vbatt_bp1_obj = bat_2_rec["pack_1_vbatt"]
-        self._vbatt_bp2_obj = bat_2_rec["pack_2_vbatt"]
+        bat_1_rec = self.node.od["battery_1"]
+        self._vbatt_bp1_obj = bat_1_rec["pack_1_vbatt"]
+        self._vbatt_bp2_obj = bat_1_rec["pack_2_vbatt"]
 
     def on_loop(self) -> None:
         """"""
@@ -77,7 +73,7 @@ class MissionDatabaseService(Service):
 
         if (
             self.is_bat_lvl_good is False
-            or self._enabled_time - monotonic() > self._active_timeout.value
+            or monotonic() - self._enabled_time > self._active_timeout.value
         ):
             self._idle()
         self.sleep(self._refresh_delay.value)

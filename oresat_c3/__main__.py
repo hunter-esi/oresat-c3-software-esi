@@ -28,6 +28,7 @@ from .services.edl import EdlService
 from .services.mission_database import MissionDatabaseService
 from .services.node_flasher import NodeFlasherService
 from .services.node_manager import NodeManagerService
+from .services.payload import PayloadService
 from .services.radios import RadiosService
 from .services.state import StateService
 from .subsystems.rtc import set_system_time_to_rtc_time
@@ -141,9 +142,9 @@ def main():
     app.od["versions"]["sw_version"].value = __version__
 
     state_service = StateService(config.fram_def, mock_hw)
-    radios_service = RadiosService(mock_hw)
-    beacon_service = BeaconService(config.beacon_def, radios_service)
     node_mgr_service = NodeManagerService(config.cards, mock_hw=mock_hw)
+    radios_service = RadiosService(node_mgr_service, mock_hw)
+    beacon_service = BeaconService(config.beacon_def, config.leop_beacon_def, radios_service)
     node_flasher_service = NodeFlasherService(app.node.fwrite_cache.dir, node_mgr_service)
     cop_service = CopManagerService()
     channel_router_service = ChannelRouterService(radios_service, cop_service)
@@ -152,6 +153,7 @@ def main():
     )
     adcs_mgr_service = ADCSManager()
     mdb_service = MissionDatabaseService(node_mgr_service)
+    payload_service = PayloadService(node_mgr_service, config.mission, mock_hw == "all")
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
     app.add_service(radios_service)
@@ -163,6 +165,7 @@ def main():
     app.add_service(adcs_mgr_service)
     app.add_service(node_flasher_service)
     app.add_service(mdb_service)
+    app.add_service(payload_service)
 
     for file_name in os.listdir(f"{path}/templates"):
         rest_api.add_template(f"{path}/templates/{file_name}")

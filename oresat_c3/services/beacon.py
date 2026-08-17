@@ -5,7 +5,7 @@ Handles making the beacon packets.
 """
 
 import zlib
-from time import time
+from time import sleep, time
 
 import canopen
 from olaf import Service, logger, scet_int_from_time
@@ -18,10 +18,11 @@ from .radios import RadiosService
 class BeaconService(Service):
     """Beacon Service."""
 
-    def __init__(self, beacon_def: dict, radios_service: RadiosService):
+    def __init__(self, beacon_def: dict, leop_beacon_def: dict, radios_service: RadiosService):
         super().__init__()
 
         self._beacon_def = beacon_def
+        self._leop_beacon_def = leop_beacon_def
         self._radios_service = radios_service
         self._ts = 0.0
 
@@ -45,6 +46,8 @@ class BeaconService(Service):
         self._c3_state_obj = self.node.od["status"]
         self._tx_enabled_obj = self.node.od["tx_control"]["enable"]
         self._delay_obj = beacon_rec["delay"]
+        self._leop_obj = beacon_rec["leop"]
+        self._leop_timeout_obj = beacon_rec["leop_bcn_timeout"]
 
         # contants
         self._dest_callsign = beacon_rec["dest_callsign"].value
@@ -65,7 +68,10 @@ class BeaconService(Service):
             return  # do nothing
 
         if self._tx_enabled_obj.value and self._c3_state_obj.value == C3State.BEACON:
-            self.send()
+            if self._leop_obj.value:
+                self.send_leop()
+            else:
+                self.send()
 
         self.sleep(self._delay_obj.value)
 
@@ -96,6 +102,39 @@ class BeaconService(Service):
         self._ts = time()
         self._radios_service.send_beacon(packet)
 
+    def send_leop(self):
+        """Send a beacon now."""
+
+        logger.debug("leop beacon proceedure")
+
+        payload = bytes()
+        for obj in self._leop_beacon_def:
+            value = self.node._on_sdo_read(obj.index, obj.subindex, obj)  # pylint: disable=W0212
+            payload += obj.encode_raw(value)
+        payload += zlib.crc32(payload, 0).to_bytes(4, "little")
+
+        packet = ax25_pack(
+            self._dest_callsign,
+            self._dest_ssid,
+            self._src_callsign,
+            self._src_ssid,
+            self._control,
+            self._pid,
+            self._command,
+            self._response,
+            payload,
+        )
+
+        logger.debug("leop beaconing")
+        send_time = len(packet) / 45000.0 * 8  # hardcoded to uhf for now. TODO: FIX
+        duration = self._leop_timeout_obj.value / 1000.0
+        send_attempts = int(duration / send_time) + 1
+
+        self._ts = time()
+        for i in range(send_attempts):
+            self._radios_service.send_beacon(packet)
+            sleep(send_time)
+
     def _on_read_last_ts(self) -> int:
         """SDO read callback to get the SCET timestamp of the last beacon."""
 
@@ -105,4 +144,7 @@ class BeaconService(Service):
         """SDO write callback to send a beacon immediately."""
 
         if value:
-            self.send()
+            if self._leop_obj.value:
+                self.send_leop()
+            else:
+                self.send()

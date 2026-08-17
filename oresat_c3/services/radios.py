@@ -8,14 +8,20 @@ import socket
 import struct
 import time
 from queue import SimpleQueue
+from time import monotonic
 
+from canopen.objectdictionary import ODVariable
+from canopen.sdo.exceptions import SdoError
 from gpiod.line import Value
-from olaf import Service, logger
+from olaf import MasterNode, Service, logger
 
 from ..drivers.si41xx import Si41xx, Si41xxIfdiv
 from ..subsystems._gpio import request_gpio_input, request_gpio_output
+from .node_manager import NodeManagerService
 
 
+# TODO: The sband is expecting a message before it sends. we don't do this, and theres some
+# scheduling that we need to do to make sure that things work.
 class RadiosService(Service):
     """Radios Service."""
 
@@ -25,7 +31,7 @@ class RadiosService(Service):
     UHF_RSSI_ADDR = ("localhost", 10030)
     BUFFER_LEN = 4096
 
-    def __init__(self, mock_hw: bool = False):
+    def __init__(self, node_mgr: NodeManagerService, mock_hw: bool = False):
         """
         Request gpio, initialize radios, add daemons, and create message queue.
 
@@ -47,6 +53,10 @@ class RadiosService(Service):
             self.lband = Radio()
 
         self.recv_queue: SimpleQueue[bytes] = SimpleQueue()
+        self._node_mgr = node_mgr
+
+        # self.sband_queue: SimpleQueue[bytearray] = SimpleQueue()
+        # self.sband_est_fin = monotonic()
 
     def on_start(self):
         """Provide uninterruptible power-on sequence, and bring up radio daemons."""
@@ -91,6 +101,18 @@ class RadiosService(Service):
             self.node.daemons["uhf"].start()
             self.node.daemons["lband"].start()
 
+        self._sband_downlink = self.node.od["sdr_ctrl"]["sband_downlink"]
+        self._sband_enable = self.node.od["sdr_ctrl"]["should_enable"]
+        self._sband_timeout = self.node.od["sdr_ctrl"]["enable_timeout"]
+        self._sband_status = self.node.od["sdr_ctrl"]["status"]
+        self.node.add_sdo_callbacks("sdr_ctrl", "should_enable", None, self._sband_should_enable_cb)
+
+        if "sdr" in self.node._od_db:  # not self._mock_hw and
+            logger.info("creating sband radio class")
+            self.sband = SbandRadio(self.node, self._node_mgr, self._sband_status)
+        else:
+            self.sband = None
+
     def on_loop(self):
         """Maintain radio health and receive edl requests."""
         if not self.uhf.is_rf_ok():
@@ -105,6 +127,9 @@ class RadiosService(Service):
             logger.error("si41xx unlocked, resetting lband synth")
             self.lband.rf_reset()
             self.node.od["lband"]["synth_relock_count"].value = self.lband.rf_reset_count
+
+        if self.sband is not None and (self._sband_enable.value or self.sband.state != 0):
+            self._handle_sband()
 
         if recv := self._recv_edl_request():
             self.recv_queue.put(recv)
@@ -151,12 +176,16 @@ class RadiosService(Service):
         message : bytes
             The message to send as a byte string.
         """
-        try:
-            self._edl_downlink_socket.sendto(message, self.EDL_DOWNLINK_ADDR)
-        except Exception as e:  # pylint: disable=W0718
-            logger.error(f"failed to send mess over EDL downlink: {e}")
+        if self._downlink_through_sband():
+            self._send_sband(message)
+            logger.debug(f"Sent EDL downlink packet through sband: {message.hex(sep=' ')}")
+        else:
+            try:
+                self._edl_downlink_socket.sendto(message, self.EDL_DOWNLINK_ADDR)
+            except Exception as e:  # pylint: disable=W0718
+                logger.error(f"failed to send mess over EDL downlink: {e}")
 
-        logger.debug(f"sent EDL downlink packet: {message.hex(sep=' ')}")
+            logger.debug(f"sent EDL downlink packet: {message.hex(sep=' ')}")
 
     def send_beacon(self, message: bytes):
         """
@@ -167,12 +196,17 @@ class RadiosService(Service):
         message : bytes
             The beacon to beacon.
         """
-        try:
-            self._beacon_downlink_socket.sendto(message, self.BEACON_DOWNLINK_ADDR)
-        except Exception as e:  # pylint: disable=W0718
-            logger.error(f"failed to send beacon message: {e}")
 
-        logger.debug(f"Sent beacon downlink packet: {message.hex(sep=' ')}")
+        if self._downlink_through_sband():
+            self._send_sband(message)
+            logger.debug(f"Sent beacon downlink packet through sband: {message.hex(sep=' ')}")
+        else:
+            try:
+                self._beacon_downlink_socket.sendto(message, self.BEACON_DOWNLINK_ADDR)
+            except Exception as e:  # pylint: disable=W0718
+                logger.error(f"failed to send beacon message: {e}")
+
+            logger.debug(f"Sent beacon downlink packet: {message.hex(sep=' ')}")
 
     def _recv_edl_request(self) -> bytes:
         """
@@ -190,6 +224,61 @@ class RadiosService(Service):
         logger.debug(f"received EDL uplink packet: {message.hex(sep=' ')} from {src}")
 
         return message
+
+    # can we and should we downlink through the sband
+    def _downlink_through_sband(self) -> bool:
+        if self.sband is None:
+            return False
+        return self._sband_downlink.value and self.sband.is_rf_ok()
+
+    def _sband_should_enable_cb(self, value: bool) -> None:
+        logger.info("Started Sband bootup process.")
+        if self.sband is None:
+            return
+        if value:
+            logger.info("Started Sband bootup process.")
+            self.sband.enable()
+            self._sband_timeout_timestamp = monotonic() + self._sband_timeout.value
+        else:
+            self.sband.disable()
+            self._sband_timeout_timestamp = 0
+            logger.info("Disabled Sband")
+
+    def _handle_sband(self) -> None:
+        if self.sband is None:
+            return
+        """Don't like this function. Should work for now."""
+        if not self._sband_enable.value and self.sband._state:
+            self._sband_enable.value = False
+            # I don't think this will auto call the enable callback. TODO: confirm this.
+            self._sband_should_enable_cb(False)
+            return
+        if self._sband_enable.value and not self.sband.is_rf_ok():
+            if self.sband.state == 0xFF:
+                self._sband_enable.value = False
+                # I don't think this will auto call the enable callback. TODO: confirm this.
+                self._sband_should_enable_cb(False)
+                return
+            self.sband.enable()
+        if self._sband_timeout_timestamp < monotonic():
+            logger.info("Sband timeout reached.")
+            self._sband_enable.value = False
+            # I don't think this will auto call the enable callback. TODO: confirm this.
+            self._sband_should_enable_cb(False)
+            return
+        # this function has 3 instances of code reuse. Bad. That should be fixed.
+
+    def _send_sband(self, message: bytes) -> None:
+        if self.sband is None:
+            return
+        try:
+            sband_rnode = self.node.remote_nodes["sdr"]
+            with sband_rnode.sdo['tx_data'].open(
+                'wb', size=len(message), block_transfer=True
+            ) as outfile:
+                outfile.write(message)
+        except Exception as e:  # pylint: disable=W0718
+            logger.error(f"failed to send data to sband: {e}")
 
 
 class Radio:
@@ -334,3 +423,128 @@ class UHFRadio(Radio):
         time.sleep(self.TOT_CLEAR_DELAY)
 
         self._uhf_tot_clear_gpio.set_value(self._uhf_tot_clear_gpio.offsets[0], Value.INACTIVE)
+
+
+class SbandRadio(Radio):
+    # self.state pseudoenum:
+    # 0: off
+    # 1: on, no heartbeat
+    # 2: on, heartbeat, sent powerup radio message
+    # 3: on, heartbeat, ready to transmit. is_rf_ok returns true.
+    # 4: graceful shutdown.
+    # 255: error.
+
+    SDO_FAULT_LIMIT = 5  # number of failed sdos before going to 0xFF state.
+
+    def __init__(self, node: MasterNode, node_mgr: NodeManagerService, status: ODVariable):
+        """Request gpio."""
+        super().__init__()
+        self._node = node
+        self._node_mgr = node_mgr
+        self._state = 0
+        self._od_status = status
+
+    def enable(self) -> None:
+        """State machine for the bootup process."""
+        if self._state == 0:
+            logger.debug("telling nodemgr to turn on sdr.")
+            self._node_mgr.enable("sdr")
+            self._state = 1
+            self._sdo_fault = 0
+
+        elif self._state == 1:
+            node_status = self._node_mgr.node_status("sdr")
+            logger.debug(f"nodemgr status of sdr: {node_status}.")
+            if node_status == 2:  # The sdr is powered on.
+                self._send_start_cmd()
+                self._state = 2
+            elif node_status == 0xFF:  # dead
+                self._state = 0xFF
+                self.status.value = self._state
+                self.disable()
+                logger.warning("sband handler was told that sdr is dead.")
+
+        elif self._state == 2:
+            val = self._get_sdr_status()
+            if val == 0:
+                logger.info("resending power on cmd to sdr.")
+                self._send_start_cmd()
+            elif val == 2:
+                self._state = 3
+            elif val == 0xFF:
+                self._state = 0xFF
+                self.status.value = self._state
+                self.disable()
+                logger.warning("sband handler sdoread error from sdr.")
+
+        else:
+            logger.warning(f"Sband radio enable called with invalid state: {self._state}.")
+            self._state = 0xFF
+
+        time.sleep(0.25)
+
+    def disable(self) -> None:
+        self._state = 4
+        self._sdo_fault = 0
+        self._shutdown()
+        self._state = 0
+
+    def _shutdown(self) -> None:
+        self._send_stop_cmd()
+        time.sleep(5)
+        self._node_mgr.disable("sdr")
+
+    # fault tolerant sdo functions.
+    def _send_start_cmd(self) -> None:
+        try:
+            self._node.sdo_write("sdr", "sdr_power", None, 1)
+        except SdoError as e:
+            logger.error(f"failed to send sdo power on cmd to SDR: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
+                self._state = 0xFF
+
+    def _send_stop_cmd(self) -> None:
+        try:
+            self._node.sdo_write("sdr", "sdr_power", None, 0)
+        except SdoError as e:
+            logger.error(f"failed to send sdo power off cmd to SDR: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
+                self._state = 0xFF
+
+    def _get_sdr_status(self) -> int:
+        try:
+            val = self._node.sdo_read("sdr", "sdr_status", None)
+        except SdoError as e:
+            logger.error(f"failed to get sdr status: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
+                self._state = 0xFF
+            val = 0
+        return val
+
+    def send_queued_messages(self) -> int:
+        """The sband needs us to send a 1 to 0x400B before it begins downlinking data"""
+        try:
+            self._node.sdo_write("sdr", "tx_send_cache", None, 1)
+        except SdoError as e:
+            logger.error(f"failed to get sdr status: {e}")
+            self._sdo_fault += 1
+            if self._sdo_fault >= self.SDO_FAULT_LIMIT:
+                self._state = 0xFF
+
+    def is_rf_ok(self) -> bool:
+        self._od_status.value = self._state
+        return self._state == 3
+
+    def rf_reset(self) -> None:
+        self._rf_reset_count += 1
+
+    @property
+    def rf_reset_count(self):
+        return self._rf_reset_count
+
+    @property
+    def state(self):
+        return self._state
