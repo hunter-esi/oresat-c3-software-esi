@@ -143,6 +143,13 @@ class ADCSManager(Service):
             gyro_bias_drift,
         )
 
+        # rad/s rate at which to stop detumbling for the vector length
+        # note that 0.001 rad/s is about 0.057 deg/s
+        self.detumble_norm_threshold = 1e-3
+        # rad/s rate at which to stop detumbling for each component
+        # note that 0.0001 rad/s is about 0.0057 deg/s
+        self.detumble_comp_threshold = 1e-4
+
         self.skyfield_timescale = load.timescale()
         # Earth Orientation Parameters
         # TODO: UPDATE THIS TO POINT TO ACTUAL FILE
@@ -627,7 +634,7 @@ class ADCSManager(Service):
             if (
                 self.control_mode.value == ControlMode.THERMAL_REORIENT
                 and quat.error_angle(q_error) <= 0.1
-                and np.all(np.abs(omega) < 1e-6)
+                and np.all(np.abs(omega) < self.detumble_comp_threshold)
             ):
                 # TODO: ZERO WHEEL SPEEDS/TURN OFF REACTION WHEELS!
                 # Must wait for wheels to turn off.
@@ -637,7 +644,10 @@ class ADCSManager(Service):
 
         elif self.control_mode.value in (ControlMode.DETUMBLE, ControlMode.THERMAL_DETUMBLE):
             # first, check if conditions have been satisfied for regular detumbling
-            if self.control_mode.value == ControlMode.DETUMBLE and np.linalg.norm(omega) < 0.002:
+            if (
+                self.control_mode.value == ControlMode.DETUMBLE
+                and np.linalg.norm(omega) < self.detumble_norm_threshold
+            ):
                 logger.info(f"DETUMBLE Control Mode satisfied with omega values of {omega}.")
                 logger.debug("Attempting to set magnetorquer currents to zero...")
                 success = self._command_magnetorquer_current(desired_current=np.array([0, 0, 0]))
@@ -678,10 +688,8 @@ class ADCSManager(Service):
 
             # If in the first of 3-step passive thermal-spin mode,
             # go to next mode.
-            # FIXME: The current object dictionary has omega as an integer of
-            # deg/s, need a different value if less than 1 deg/s is desired.
             if self.control_mode.value == ControlMode.THERMAL_DETUMBLE and np.all(
-                np.abs(omega) < 1e-4
+                np.abs(omega) < self.detumble_comp_threshold
             ):
                 # If angular velocity within threshold, switch to reorient
                 self.control_mode.value = ControlMode.THERMAL_REORIENT.value
@@ -866,11 +874,15 @@ class ADCSManager(Service):
                 dt.microsecond // 1000
             )
             buf.timestamp = ms_since_midnight
-            buf.data.gyro[0] = value
+            # FIXME: unit mismatch,
+            # v1.0 Mag cards report in milli-degrees per second
+            # Object dictionary currently assumes it is in deg/s
+            # Desired unit is rad/s
+            buf.data.gyro[0] = value * np.pi / 180000
         elif subindex == "gyroscope_yaw_rate":
-            buf.data.gyro[1] = value
+            buf.data.gyro[1] = value * np.pi / 180000
         elif subindex == "gyroscope_roll_rate":
-            buf.data.gyro[2] = value
+            buf.data.gyro[2] = value * np.pi / 180000
         else:
             logger.error("Received invalid IMU subindex")
 
