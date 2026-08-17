@@ -263,6 +263,19 @@ class EdlService(Service):
                         raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
                     self.node._on_sdo_write(index, subindex, obj, data)  # pylint: disable=W0212
                 else:
+                    if subindex == 0:
+                        subindex = None
+
+                    od = self.node.od_db[name]
+                    var_index = isinstance(od[index], canopen.objectdictionary.Variable)
+                    if var_index and subindex is None:
+                        obj = od[index]
+                    elif not var_index:
+                        obj = od[index][subindex]
+                    else:
+                        raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
+                    data = obj.decode_raw(data)
+
                     self.node.sdo_write(name, index, subindex, data)
                 ret = 0
             except canopen.sdo.exceptions.SdoAbortedError as e:
@@ -347,13 +360,17 @@ class EdlService(Service):
                     value = self.node._on_sdo_read(index, subindex, obj)  # pylint: disable=W0212
                     data = obj.encode_raw(value)
                 else:
-                    value = self.node.sdo_read(name, index, subindex)
+                    if subindex == 0:
+                        effective_subindex = None
+                    else:
+                        effective_subindex = subindex
+                    value = self.node.sdo_read(name, index, effective_subindex)
                     od = self.node.od_db[name]
                     var_index = isinstance(od[index], canopen.objectdictionary.Variable)
-                    if var_index and subindex == 0:
+                    if var_index and effective_subindex is None:
                         obj = od[index]
                     elif not var_index:
-                        obj = od[index][subindex]
+                        obj = od[index][effective_subindex]
                     else:
                         raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
                     data = obj.encode_raw(value)
