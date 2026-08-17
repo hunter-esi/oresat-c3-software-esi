@@ -186,6 +186,9 @@ class EdlService(Service):
             try:
                 res_payload = self._run_cmd(req_packet.payload)
                 if not res_payload.values:
+                    logger.info(
+                        f"EDL dropping command response with no values. ID: {res_payload.code.name}"
+                    )
                     return  # no response
                 self._respond(EdlVcid.C3_COMMAND, res_payload)
             except Exception as e:  # pylint: disable=W0718
@@ -244,14 +247,12 @@ class EdlService(Service):
             logger.info("EDL factory reset")
             self.node.stop(NodeStop.FACTORY_RESET)
         elif request.code == EdlCommandCode.CO_NODE_ENABLE:
-            node_id = request.args[0]
-            name = self._node_mgr_service.node_id_to_name[node_id]
-            logger.info(f"EDL enabling CANopen node {name} (0x{node_id:02X})")
+            logger.warning("EDL got CO_NODE_ENABLE, which is vestigial and should not be used.")
         elif request.code == EdlCommandCode.CO_NODE_STATUS:
             node_id = request.args[0]
             name = self._node_mgr_service.node_id_to_name[node_id]
             logger.info(f"EDL getting CANopen node {name} (0x{node_id:02X}) status")
-            ret = self.node.node_status[name]
+            ret = self.node.node_status[name].state
         elif request.code == EdlCommandCode.CO_SDO_WRITE:
             node_id, index, subindex, _, data = request.args
             name = self._node_mgr_service.node_id_to_name[node_id]
@@ -267,6 +268,19 @@ class EdlService(Service):
                         raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
                     self.node._on_sdo_write(index, subindex, obj, data)  # pylint: disable=W0212
                 else:
+                    if subindex == 0:
+                        subindex = None
+
+                    od = self.node.od_db[name]
+                    var_index = isinstance(od[index], canopen.objectdictionary.Variable)
+                    if var_index and subindex is None:
+                        obj = od[index]
+                    elif not var_index:
+                        obj = od[index][subindex]
+                    else:
+                        raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
+                    data = obj.decode_raw(data)
+
                     self.node.sdo_write(name, index, subindex, data)
                 ret = 0
             except canopen.sdo.exceptions.SdoAbortedError as e:
@@ -275,6 +289,7 @@ class EdlService(Service):
         elif request.code == EdlCommandCode.CO_SYNC:
             logger.info("EDL sending CANopen SYNC message")
             self.node.send_sync()
+            ret = True
         elif request.code == EdlCommandCode.OPD_SYSENABLE:
             enable = request.args[0]
             if enable:
@@ -318,11 +333,12 @@ class EdlService(Service):
         elif request.code == EdlCommandCode.RTC_SET_TIME:
             ts = request.args[0]
             logger.info(f"EDL setting the RTC time to {ts}")
-            set_rtc_time(ts)
-            set_system_time_to_rtc_time()
+            ret = set_rtc_time(ts)
+            ret = ret and set_system_time_to_rtc_time()
         elif request.code == EdlCommandCode.TIME_SYNC:
             logger.info("EDL sending time sync TPDO")
             self.node.send_tpdo(0)
+            ret = True
         elif request.code == EdlCommandCode.BEACON_PING:
             logger.info("EDL beacon")
             self._beacon_service.send()
@@ -349,19 +365,24 @@ class EdlService(Service):
                     value = self.node._on_sdo_read(index, subindex, obj)  # pylint: disable=W0212
                     data = obj.encode_raw(value)
                 else:
-                    value = self.node.sdo_read(name, index, subindex)
+                    if subindex == 0:
+                        effective_subindex = None
+                    else:
+                        effective_subindex = subindex
+                    value = self.node.sdo_read(name, index, effective_subindex)
                     od = self.node.od_db[name]
                     var_index = isinstance(od[index], canopen.objectdictionary.Variable)
-                    if var_index and subindex == 0:
+                    if var_index and effective_subindex is None:
                         obj = od[index]
                     elif not var_index:
-                        obj = od[index][subindex]
+                        obj = od[index][effective_subindex]
                     else:
                         raise canopen.sdo.exceptions.SdoAbortedError(0x06090011)
                     data = obj.encode_raw(value)
             except canopen.sdo.exceptions.SdoAbortedError as e:
                 logger.error(e)
                 ecode = e.code
+                data = bytes("ERROR", "utf-8")
             ret = (node_id, index, subindex, ecode, len(data), data)
         elif request.code == EdlCommandCode.CO_NODE_FLASH:
             node_id, filename, throttle_delay, block_transfer, request_crc, confirm_image = (
