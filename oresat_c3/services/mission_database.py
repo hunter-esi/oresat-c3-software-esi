@@ -46,6 +46,7 @@ class MissionDatabaseService(Service):
 
     def on_loop(self) -> None:
         """"""
+        self.sleep(0.5)
         if self.active.value is False:
             self.sleep(self._refresh_delay.value)
             return
@@ -64,6 +65,11 @@ class MissionDatabaseService(Service):
             return
         elif self.is_bat_lvl_good is False:
             self.sleep(self._refresh_delay.value)
+            if (
+                self._node_mgr_service.node_status("gps") != 1  # On.
+                and self._node_mgr_service.node_status("gps") != 2  # Boot
+            ):
+                self._node_mgr_service.disable("gps")
             return
 
         self._set_csv_gps()
@@ -93,14 +99,14 @@ class MissionDatabaseService(Service):
         with open(new_file_path, "w") as f:
             f.write(self.data)
 
-        self.node.fread_cache.add(new_file_path, True)
+        self.node.fwrite_cache.add(new_file_path, True)
         self.data = ""
 
-        files = self.node.fread_cache.files("gps-data")
+        files = self.node.fwrite_cache.files("gps-data")
         if len(files) > self._max_num_files.value:
             files = sorted(files)
             logger.error(f"Deleting file {files[0].name}")
-            self.node.fread_cache.remove(files[0])
+            self.node.fwrite_cache.remove(files[0])
 
         self.current_datapoints = 0
 
