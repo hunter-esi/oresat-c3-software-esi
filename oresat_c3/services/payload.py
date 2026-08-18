@@ -59,7 +59,10 @@ class PayloadService(Service):
         elif self._mission.__str__() == "beecon":
             logger.info("creating beecon payload handler")
             self._payload_handler = BeeconHandler(
-                self._state, self.node.od["beacon"]["delay"], self._mock
+                self._state,
+                self.node.od["beacon"]["delay"],
+                self. _power_indicatior_event,
+                self._mock,
             )
         else:
             logger.error("Payload Service started despite mission not having a compatable payload.")
