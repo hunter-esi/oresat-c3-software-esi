@@ -121,12 +121,16 @@ class BeeconHandler:
 
         self._beecon_node = OpdNode(self._I2C_BUS_NUM, "beecon", 0x10, mock=mock)
         self._beecon_node.configure()
+        self.failed = False
         if not self._beecon_node.probe():
             logger.error("Beecon handler could not find science card!")
-            raise Exception("Beecon handler could not find science card!")
+            self.failed = True
 
     def loop(self) -> None:
         """Runs the beecon state machine. Makes sure the beecon is on or off, depending on state"""
+        if self.failed:
+            time.sleep(60)
+            return
         state_val = self._state.value
         if state_val == 0:
             if self._beecon_node.is_enabled:
