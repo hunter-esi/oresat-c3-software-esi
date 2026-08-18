@@ -502,62 +502,31 @@ class ADCSManager(Service):
             return
         omega = imu_data.gyro
 
-        # retreive GPS data
-        # TODO: wrap this in get_sensor_data()
-        if "gps" not in self._sensor_data.keys():
-            logger.error("GPS data is not yet in sensor data.")
-            logger.error("No data recieved from GPS yet.")
-            self.sleep(5)
-            return
-        try:
-            gps_data = self._sensor_data["gps"].data
-        except Exception as e:
-            logger.error(f"Some other GPS data error occured: {e}")
-            self.sleep(5)
-            return
-        if not isinstance(gps_data, GPSData):
-            logger.error("Incorrect sensor data type")
-            self.sleep(5)
-            return
+        if self.control_mode.value != ControlMode.DETUMBLE:
+            # TODO: change this logic so this code block does not need
+            # to be before the control modes
 
-        # TODO: target calculation based on guidance mode is not needed depending
-        # on the control mode, change this only only occur on certain steps
-        r_ecef = np.asarray(gps_data.position)
-        if np.linalg.norm(r_ecef) < 100:
-            logger.debug(f"GPS position: {r_ecef}")
-            logger.warning("GPS position data appears to be bogus")
-        v_ecef = np.asarray(gps_data.velocity)
-        if np.linalg.norm(v_ecef) < 100:
-            logger.debug(f"GPS velocity: {v_ecef}")
-            logger.warning("GPS velocity data appears to be bogus")
-        t = self.skyfield_timescale.now()  # set ephemeris calculation time
-        eci_2_ecef = self.skyfield_EOP.rotation_at(t)  # inertial -> ECEF rotation matrix
-        # used to get correct facing for star tracker
-        # Nadir vector is opposite of vector from earth.
-        nadir_vector_ecef = -r_ecef / np.linalg.norm(r_ecef)
-        if self.guidance_mode.value == GuidanceMode.TARGET:
-            # calculate target vector in ECEF cartesian coordinates
-            target_vector = self.ECEF_target - r_ecef
-            # normalize to unit vector
-            target_vector = target_vector / np.linalg.norm(target_vector)
-            # create orientation quaternion from cartesian target
-            new_target = guid.target_tracking_quat(target_vector, nadir_vector_ecef, eci_2_ecef)
-        elif self.guidance_mode.value == GuidanceMode.NADIR:
-            # create orientation quaternion from cartesian target
-            new_target = guid.nadir_quat(nadir_vector_ecef, v_ecef, eci_2_ecef)
-        elif (
-            self.guidance_mode.value == GuidanceMode.MAX_DRAG
-            or self.guidance_mode.value == GuidanceMode.MIN_DRAG
-        ):
-            # calculate ram-facing orientation for either +z or +x axis based on min or max drag
-            new_target = guid.ram_quaternion(
-                GuidanceMode(self.guidance_mode.value), v_ecef, nadir_vector_ecef, eci_2_ecef
-            )
-        else:
-            new_target = None
-            logger.warning(f"Unknown guidance mode: {self.guidance_mode.value}")
+            # retreive GPS data
+            # TODO: wrap this in get_sensor_data()
+            if "gps" not in self._sensor_data.keys():
+                logger.error("GPS data is not yet in sensor data.")
+                logger.error("No data recieved from GPS yet.")
+                self.sleep(5)
+                return
+            try:
+                gps_data = self._sensor_data["gps"].data
+            except Exception as e:
+                logger.error(f"Some other GPS data error occured: {e}")
+                self.sleep(5)
+                return
+            if not isinstance(gps_data, GPSData):
+                logger.error("Incorrect sensor data type")
+                self.sleep(5)
+                return
 
-        self.update_target(new_target)
+            new_target = self.calculate_target_eci(gps_data)
+            logger.debug(f"Target eci quaternion is: {new_target}")
+            self.update_target(new_target)
 
         # Control Modes
         if self.control_mode.value in (ControlMode.RW_POINTING, ControlMode.THERMAL_REORIENT):
@@ -753,7 +722,54 @@ class ADCSManager(Service):
         else:
             logger.error("Unknown control mode {}", self.control_mode.value)
 
+    def calculate_target_eci(self, gps_data: np.ndarray) -> None:
+        """Calculate the target quat based on gps data."""
+
+        # get position data and check if bogus
+        r_ecef = np.asarray(gps_data.position)
+        if np.linalg.norm(r_ecef) < 100:
+            logger.debug(f"GPS position: {r_ecef}")
+            logger.warning("GPS position data appears to be bogus")
+
+        # get velocity data and check if bogus
+        v_ecef = np.asarray(gps_data.velocity)
+        if np.linalg.norm(v_ecef) < 100:
+            logger.debug(f"GPS velocity: {v_ecef}")
+            logger.warning("GPS velocity data appears to be bogus")
+
+        # create inertial to ecef rotation matrix,
+        # mostly for correcting the face of the star tracker
+        eci_2_ecef = self.skyfield_EOP.rotation_at(self.skyfield_timescale.now())
+
+        # Nadir vector is opposite of vector from earth.
+        nadir_vector_ecef = -r_ecef / np.linalg.norm(r_ecef)
+
+        # Calculate the target quaternion based on guidance mode
+        if self.guidance_mode.value == GuidanceMode.TARGET:
+            # calculate target vector in ECEF cartesian coordinates and normalize
+            target_vector = self.ECEF_target - r_ecef
+            target_vector = target_vector / np.linalg.norm(target_vector)
+            # create orientation quaternion from cartesian target
+            new_target = guid.target_tracking_quat(target_vector, nadir_vector_ecef, eci_2_ecef)
+        elif self.guidance_mode.value == GuidanceMode.NADIR:
+            # create orientation quaternion from cartesian target
+            new_target = guid.nadir_quat(nadir_vector_ecef, v_ecef, eci_2_ecef)
+        elif (
+            self.guidance_mode.value == GuidanceMode.MAX_DRAG
+            or self.guidance_mode.value == GuidanceMode.MIN_DRAG
+        ):
+            # calculate ram-facing orientation for either +z or +x axis based on min or max drag
+            new_target = guid.ram_quaternion(
+                GuidanceMode(self.guidance_mode.value), v_ecef, nadir_vector_ecef, eci_2_ecef
+            )
+        else:
+            new_target = None
+            logger.warning(f"Unknown guidance mode: {self.guidance_mode.value}")
+
+        return new_target
+
     def update_target(self, target_quat: np.ndarray) -> None:
+        """Change the target quat based on pointing reference and save it."""
         if self.pointing_reference.value == PointingReference.STAR_TRACKER:
             # define target in body coordinates
             self.q_target = quat.quat_mult(self.q_90_rot, target_quat)
