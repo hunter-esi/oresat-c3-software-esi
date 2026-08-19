@@ -25,7 +25,7 @@ from .services.beacon import BeaconService
 from .services.channel_router import ChannelRouterService
 from .services.cop_manager import CopManagerService
 from .services.edl import EdlService
-from .services.mission_database import MissionDatabaseService
+from .services.mission_database import MissionDatabaseService  # noqa: F401
 from .services.node_flasher import NodeFlasherService
 from .services.node_manager import NodeManagerService
 from .services.payload import PayloadService
@@ -164,7 +164,7 @@ def main():
         app.node, node_mgr_service, beacon_service, channel_router_service, node_flasher_service
     )
     adcs_mgr_service = ADCSManager()
-    mdb_service = MissionDatabaseService(node_mgr_service)
+    # mdb_service = MissionDatabaseService(node_mgr_service)
     payload_service = PayloadService(node_mgr_service, config.mission, mock_hw == "all")
 
     app.add_service(state_service)  # add state first to restore state from F-RAM
@@ -176,7 +176,7 @@ def main():
     app.add_service(node_mgr_service)
     app.add_service(adcs_mgr_service)
     app.add_service(node_flasher_service)
-    app.add_service(mdb_service)
+    # app.add_service(mdb_service)
     app.add_service(payload_service)
 
     for file_name in os.listdir(f"{path}/templates"):

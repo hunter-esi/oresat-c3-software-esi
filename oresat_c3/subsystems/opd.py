@@ -503,13 +503,13 @@ class OpdOctavoNode(OpdNode):
             Mock the OPD subsystem.
         """
         super().__init__(bus, name, addr, mock=mock)
-        # Modern PSAS card standards have SYS_BOOT2 on pin 5 but the GPS card is the last
-        # of the old style that had it on 0. FIXME: This class shouldn't know specific OPD
-        # addresses. Move pin functionality to configs?
-        if addr == 0x19:
-            self._SYS_BOOT2 = 0
-        else:
-            self._SYS_BOOT2 = 5
+        # Sentinel has the older GPS card, and so this part of the software should be used if
+        # making an update for it.
+
+        # if addr == 0x19:
+        #     self._SYS_BOOT2 = 0
+        # else:
+        self._SYS_BOOT2 = 5
 
     def enable(self) -> OpdNodeState:
         """Enable the node"""
