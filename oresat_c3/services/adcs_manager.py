@@ -305,6 +305,7 @@ class ADCSManager(Service):
         init_time = time()
         # reset filter states for next maneuver
         self.EKF.reset(q, omega, init_time)
+        self.filter_initialized = True
 
     def _update_sat_inertia(self, value: bytes) -> None:
         jxx, jxy, jxz, jyx, jyy, jyz, jzx, jzy, jzz = struct.unpack(">fffffffff", value)
@@ -454,7 +455,8 @@ class ADCSManager(Service):
             and not self.filter_initialized
         ):
             if not self.is_data_available:
-                self.sleep_ms(5000)
+                logger.error("Data is not yet available, skipping control loop.")
+                self.sleep(5)
                 return
             imu_data = self._sensor_data["adcs"].data
             if not isinstance(imu_data, IMUData):
@@ -466,7 +468,8 @@ class ADCSManager(Service):
             star_tracker_output = self._sensor_data["star_tracker_1"]
             if (
                 star_tracker_output
-                and isinstance(star_tracker_output, StarTrackerData)
+                and star_tracker_output is not None
+                and isinstance(star_tracker_output.data, StarTrackerData)
                 and not star_tracker_output.data.attitude_known
             ):
                 d_omega = self.spin_omega_target - omega  # desired delta omega
@@ -680,31 +683,68 @@ class ADCSManager(Service):
                 self._command_magnetorquer_current(desired_current=m_cmd)
 
         elif self.control_mode.value == ControlMode.MTB_POINTING:
-            # Get the magnetic field data
-            b = self.get_magnetometer_data()
-            if np.linalg.norm(b) == 0:
-                logger.warning("Magnetic field values are zero.")
-                logger.error("Magnetic field values appear to be bogus.")
+            if "star_tracker_1" not in self._sensor_data.keys():
+                logger.error("Star Tracker is not yet in sensor data.")
+                logger.error("No data recieved from star tracker yet.")
                 self.sleep(5)
                 return
 
-            star_tracker_output = self.get_sensor_data("star_tracker_1")
+            try:
+                star_tracker_output = self.get_sensor_data("star_tracker_1")
+            except Exception as e:
+                logger.error(f"Some other ADCS data error occured for star tracker: {e}")
+                self.sleep(5)
+                return
+
             if (
                 star_tracker_output
-                and isinstance(star_tracker_output, StarTrackerData)
+                and star_tracker_output is not None
+                and isinstance(star_tracker_output.data, StarTrackerData)
                 and star_tracker_output.data.attitude_known
             ):
+                logger.debug("Calculating q_st_rotated...")
                 q_star_tracker = star_tracker_output.data.orientation
                 # rotate star tracker output into body frame
                 q_st_rotated = quat.quat_mult(self.q_90_rot, q_star_tracker)
             else:
                 q_st_rotated = None
 
+            if q_st_rotated is None:
+                logger.error(f"Issue calculating q_st_rotated!")
+                logger.debug(f"Star tracker output: {star_tracker_output}")
+                if star_tracker_output is not None:
+                    logger.debug(f"Star tracker is instance: {isinstance(star_tracker_output, StarTrackerData)}")
+                    if isinstance(star_tracker_output.data, StarTrackerData):
+                        logger.debug(f"Star tracker attitude known: {star_tracker_output.data.attitude_known}")
+                logger.warning("Skipping control loop.")
+                self.sleep(1)
+                return
+
+            if not self.filter_initialized:
+                logger.debug("Initializing filter...")
+                self.initialize_filter()
+                logger.debug("Filter initialized, continuing to next control loop.")
+                return
+
+            # Get the magnetic field data
+            b = self.get_magnetometer_data()
+            if np.linalg.norm(b) == 0:
+                logger.warning("Magnetic field values are zero.")
+                logger.error("Magnetic field values appear to be bogus. Skipping control loop.")
+                self.sleep(5)
+                return
+
+
+            logger.debug(f"Pre-filtered quaternion: {q_st_rotated}")
             q, omega = self.EKF.update(datetime.now(timezone.utc).timestamp(), omega, q_st_rotated)
+            logger.debug(f"Filtered quaternion: {q}")
             q_error = quat.quat_error(self.q_target, q)
             # only apply hemisphere check once, after determining error quaternion
             # to maintain associativity across hemisphere boundaries
             q_error = quat.hemi(q_error)
+
+            logger.debug(f"q_error: {q_error}")
+            logger.debug(f"angle error: {quat.error_angle(q_error)}")
 
             # desired 3-axis torque in body frame
             tau_des = self.mag_lqr_controller(q_error, omega)
@@ -712,13 +752,38 @@ class ADCSManager(Service):
             k = 1e-8
             desired_dipoles = np.linalg.inv(bm.T @ bm + k * np.eye(3)) @ bm.T @ tau_des
             m_cmd = desired_dipoles * self.mag_constants
-            self._command_magnetoruqer_current(desired_current=m_cmd)
+            self._command_magnetorquer_current(desired_current=m_cmd)
 
             # FIXME: check logic going to this state.
             # The magnetic dipoles should be updated continuously.
             # Should it go into idle state only after state conditions are met?
-            logger.debug("ADCS satisfied: going to IDLE")
-            self.control_mode.value = ControlMode.IDLE
+
+            if (
+                quat.error_angle(q_error) <= 0.1
+                and np.all(np.abs(omega) < self.detumble_comp_threshold)
+            ):
+                # TODO: ZERO WHEEL SPEEDS/TURN OFF REACTION WHEELS!
+                # Must wait for wheels to turn off.
+                # They should be at zero by the end of the maneuver. If not, there is a problem!
+                # change mission mode to spin-up with magnetorquers
+                logger.debug("MTB_POINTING satisifed!")
+                logger.debug("Attempting to set magnetorquer currents to zero...")
+                success = self._command_magnetorquer_current(desired_current=np.array([0, 0, 0]))
+                if not success:
+                    logger.warning("Unable to turn of magnetorquers")
+                    logger.debug("Attempting to set magnetorquer currents to zero one more time...")
+                    success = self._command_magnetorquer_current(
+                        desired_current=np.array([0, 0, 0])
+                    )
+                    if not success:
+                        logger.error(
+                            "Unable to turn of magnetorquers, but exiting MTB_POINTING mode anyway."
+                        )
+                logger.info("Changing control mode from MTB_POINTING to IDLE")
+                self.control_mode.value = ControlMode.IDLE.value
+                return
+
+
         else:
             logger.error("Unknown control mode {}", self.control_mode.value)
 
@@ -944,8 +1009,15 @@ class ADCSManager(Service):
         """
 
         data = self._sensor_data[sensor]
+        if data:
+            logger.debug(f"Data: {data}")
+            logger.debug(f"Data timestamp: {data.timestamp}")
+            logger.debug(f"Sensor timestamp for {sensor}: {self.last_sensor_time[sensor]}")
+            if data.timestamp == self.last_sensor_time[sensor]:
+                logger.warning(f"Data timstamps match, suggesting there is no new data for {sensor}")
         if data and data.timestamp != self.last_sensor_time[sensor]:
             self.last_sensor_time[sensor] = data.timestamp
             return data
         else:
+            logger.warning("Issue with data timestamp, returning default value.")
             return default
