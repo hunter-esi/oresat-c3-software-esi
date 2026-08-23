@@ -7,6 +7,7 @@ Handles interfacing with the radio driver daemon.
 import socket
 import struct
 import time
+from math import ceil
 from queue import SimpleQueue
 from time import monotonic
 
@@ -55,8 +56,8 @@ class RadiosService(Service):
         self.recv_queue: SimpleQueue[bytes] = SimpleQueue()
         self._node_mgr = node_mgr
 
-        # self.sband_queue: SimpleQueue[bytearray] = SimpleQueue()
-        # self.sband_est_fin = monotonic()
+        self.sband_queue: SimpleQueue[bytes] = SimpleQueue()
+        self._sband_ready_at = monotonic()
 
     def on_start(self):
         """Provide uninterruptible power-on sequence, and bring up radio daemons."""
@@ -177,7 +178,7 @@ class RadiosService(Service):
             The message to send as a byte string.
         """
         if self._downlink_through_sband():
-            self._send_sband(message)
+            self.try_send_sband(message)
             logger.debug(f"Sent EDL downlink packet through sband: {message.hex(sep=' ')}")
         else:
             try:
@@ -198,7 +199,7 @@ class RadiosService(Service):
         """
 
         if self._downlink_through_sband():
-            self._send_sband(message)
+            self.try_send_sband(message)
             logger.debug(f"Sent beacon downlink packet through sband: {message.hex(sep=' ')}")
         else:
             try:
@@ -225,14 +226,18 @@ class RadiosService(Service):
 
         return message
 
-    # can we and should we downlink through the sband
+
+
+    #### SBAND HANDLING
+
     def _downlink_through_sband(self) -> bool:
+        """Can/should we downlink through the sband?"""
         if self.sband is None:
             return False
         return self._sband_downlink.value and self.sband.is_rf_ok()
 
     def _sband_should_enable_cb(self, value: bool) -> None:
-        logger.info("Started Sband bootup process.")
+        """Turns on or off the sband (if it exists) based on passed value"""
         if self.sband is None:
             return
         if value:
@@ -245,14 +250,16 @@ class RadiosService(Service):
             logger.info("Disabled Sband")
 
     def _handle_sband(self) -> None:
+        """Don't like this function. Should work for now."""
         if self.sband is None:
             return
-        """Don't like this function. Should work for now."""
+
         if not self._sband_enable.value and self.sband._state:
             self._sband_enable.value = False
             # I don't think this will auto call the enable callback. TODO: confirm this.
             self._sband_should_enable_cb(False)
             return
+
         if self._sband_enable.value and not self.sband.is_rf_ok():
             if self.sband.state == 0xFF:
                 self._sband_enable.value = False
@@ -260,6 +267,7 @@ class RadiosService(Service):
                 self._sband_should_enable_cb(False)
                 return
             self.sband.enable()
+
         if self._sband_timeout_timestamp < monotonic():
             logger.info("Sband timeout reached.")
             self._sband_enable.value = False
@@ -268,7 +276,42 @@ class RadiosService(Service):
             return
         # this function has 3 instances of code reuse. Bad. That should be fixed.
 
-    def _send_sband(self, message: bytes) -> None:
+        if (self._sband_ready_at < monotonic()
+            and not self.sband_queue.empty()
+            and not self.sband_lock
+        ):
+            self._send_queued()
+
+        # if we have sent frames to the sdr and it has been 1 second since the last frame, downlink.
+        if self._sband_send_time > 0 and self.last_frame + 1 > monotonic():
+            self.force_sband_send()
+
+    def force_sband_send(self) -> None:
+        """Send the cmd to start sending data, and compute the time after which we will be done"""
+        self.sband.send_queued_messages()
+        self._sband_ready_at = monotonic() + self._sband_send_time
+        self._sband_send_time = 0
+
+    def try_send_sband(self, message: bytes) -> None:
+        """
+        Function to try to send bytes to sband. If the sband is currently busy, send the bytes to
+        the queue instead.
+        """
+        if self._sband_ready_at > monotonic():
+            self.sband_queue.put(message)
+        else:
+            ### BAD. SHOULD TIMEOUT.
+            while self.sband_lock:
+                time.sleep(0.033)
+            if not self.sband_queue.empty():
+                self._send_queued()
+            self._send_on_sband(message)
+
+    def _send_on_sband(self, message: bytes) -> None:
+        """
+        Send the given bytes to the sband. Do not use this for generic sending, as it DOES NOT check
+        that the sband is ready for more bytes. Use this and only this to send data to the sdr.
+        """
         if self.sband is None:
             return
         try:
@@ -277,8 +320,34 @@ class RadiosService(Service):
                 'wb', size=len(message), block_transfer=True
             ) as outfile:
                 outfile.write(message)
-        except Exception as e:  # pylint: disable=W0718
+                self._add_sband_time(len(message))
+                self.last_frame = monotonic()
+        except SdoError as e:
             logger.error(f"failed to send data to sband: {e}")
+
+    def _add_sband_time(self, msg_len: int) -> None:
+        """
+        Computes and adds the est time that the sband will take to finish.
+        SDR sends fixed size frames with payload size ~1097 octets. We will be using data rate
+        675000 spSec / 2 spSym, so 675000 bps.
+        """
+        if msg_len < 1097:
+            self._sband_send_time += 1275 / 675000
+        else:
+            frames = ceil(msg_len / 1097)
+            self._sband_send_time += frames * (1275 / 675000)
+
+    def _send_queued(self) -> None:
+        self.sband_lock = True
+        try:
+            while not self.sband_queue.empty():
+                frame = self.sband_queue.get()
+                self._send_on_sband(frame)
+        except Exception as e:
+            self.sband_lock = False
+            self.sband_queue.queue.clear()
+            logger.error(f"failed to send all elements of the sband queue: {e}")
+        self.sband_lock = False
 
 
 class Radio:
