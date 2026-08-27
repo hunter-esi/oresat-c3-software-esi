@@ -12,6 +12,7 @@ from time import monotonic
 
 import serial
 from canopen.objectdictionary import ODVariable
+from canopen.sdo.exceptions import SdoError
 from olaf import Service, logger
 from oresat_configs.constants import Mission
 
@@ -273,3 +274,59 @@ class PiPlasmaHandler:
             new_file = Path(f"c3_piplasma_{timestamp}.txt")
         self._store.create_file(new_file)
         self._file = new_file
+
+class OsirisHandler:
+    def __init__(
+        self,
+        in_state: ODVariable,
+        node_mgr: NodeManagerService,
+        pwr_event: Event,
+        mock: bool,
+    ):
+        self._state = in_state
+        self._node_mgr = node_mgr
+        self._filesize = 0
+        self._file = None
+        self._piplasma = None
+        self._pwr_event = pwr_event
+        self._mock = mock
+
+        if self._state.value > 1:
+            self._state.value = 1
+
+    def loop(self):
+        if self._mock:
+            time.sleep(10)
+            return
+
+        state_val = self._state.value
+        if state_val == 0:
+            self._idle()
+        if state_val == 1:
+            self._startup()
+        if state_val == 2:
+            self._bootup()
+        if state_val == 3:
+            self._active()
+
+    def _idle(self):
+        if (
+            self._node_mgr.node_status("piplasma_sci") == 1
+            or self._node_mgr.node_status("piplasma_sci") == 2
+        ):
+            self._node_mgr.disable("piplasma_sci")
+
+    def _startup(self):
+        while self._node_mgr.node_status("piplasma_sci") == 1:
+            time.sleep(0.1)
+        if self._node_mgr.node_status("piplasma_sci") != 2:
+            time.sleep(10)
+            return
+
+
+
+    def _set_bootstate(self, new_state: int) -> bool:
+        try:
+            self.node.sdo_write("osiris_sci", 0x4001, 0x2, new_state)
+        except SdoError as e:
+            logger.error(f"failed to send sdo command : {e}")
