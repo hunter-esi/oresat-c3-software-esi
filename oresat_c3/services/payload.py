@@ -48,6 +48,9 @@ class PayloadService(Service):
         if self._mission.__str__() == "osiris_b1":
             logger.info("creating osiris payload handler")
             # self._payload_handler = BeeconHandler(self._state)
+        if self._mission.__str__() == "osiris_c":
+            logger.info("creating osiris-c payload handler - Empty right now")
+            # self._payload_handler = BeeconHandler(self._state)
         elif self._mission.__str__() == "prism":
             logger.info("creating prism payload handler")
             self._payload_handler = PiPlasmaHandler(
