@@ -276,6 +276,9 @@ class PiPlasmaHandler:
         self._file = new_file
 
 class OsirisHandler:
+    # Safekeeping:
+    # sudo pppd nodetach nocrtscts lock noauth maxfail 0 persist 10.0.41.1:10.0.41.2 passive local noproxyarp /dev/ttyS3 921600  # noqa: E501
+
     def __init__(
         self,
         in_state: ODVariable,
@@ -299,15 +302,15 @@ class OsirisHandler:
             time.sleep(10)
             return
 
-        state_val = self._state.value
-        if state_val == 0:
-            self._idle()
-        if state_val == 1:
-            self._startup()
-        if state_val == 2:
-            self._bootup()
-        if state_val == 3:
-            self._active()
+        # state_val = self._state.value
+        # if state_val == 0:
+        #     self._idle()
+        # if state_val == 1:
+        #     self._startup()
+        # if state_val == 2:
+        #     self._bootup()
+        # if state_val == 3:
+        #     self._active()
 
     def _idle(self):
         if (
@@ -322,8 +325,13 @@ class OsirisHandler:
         if self._node_mgr.node_status("piplasma_sci") != 2:
             time.sleep(10)
             return
+        self._state.value = 2
 
+    def _bootup(self):
+        pass
 
+    def _active(self):
+        pass
 
     def _set_bootstate(self, new_state: int) -> bool:
         try:
